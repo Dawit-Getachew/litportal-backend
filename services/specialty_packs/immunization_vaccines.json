@@ -1,0 +1,206 @@
+{
+  "name": "immunization_vaccines",
+  "specialty": "preventive_medicine",
+  "secondary_specialties": ["pediatrics", "infectious_disease", "family_medicine"],
+  "description": "Phase 5F — immunizations + vaccines specialty pack. Used by ClinicalOntologyMapperService and ClinicalRoleRepairService for vaccine schedule + effectiveness questions (e.g., 'what is the recommended age to get varicella vaccination? what is its benefit?'). Multi-intent ready: separates schedule sub-asks from effectiveness sub-asks.",
+  "concept_groups": {
+    "varicella_vaccine": {
+      "concept_type": "vaccine",
+      "role_hint": "intervention",
+      "concepts": [
+        {
+          "concept": "varicella vaccine",
+          "synonyms": [
+            "varicella zoster vaccine",
+            "VZV vaccine",
+            "chickenpox vaccine",
+            "Varivax",
+            "live attenuated varicella vaccine",
+            "live varicella vaccine",
+            "VAR",
+            "ProQuad"
+          ],
+          "mesh_descriptor": "Chickenpox Vaccine",
+          "umls_cui": "C0042478",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "MMRV vaccine",
+          "synonyms": [
+            "measles-mumps-rubella-varicella vaccine",
+            "MMRV",
+            "ProQuad",
+            "quadrivalent varicella"
+          ],
+          "mesh_descriptor": "Measles-Mumps-Rubella Vaccine",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "herpes zoster vaccine",
+          "synonyms": ["shingles vaccine", "Zostavax", "Shingrix", "recombinant zoster vaccine", "RZV"],
+          "mesh_descriptor": "Herpes Zoster Vaccine",
+          "ontology_confidence": 0.95
+        }
+      ]
+    },
+    "varicella_condition": {
+      "concept_type": "disease",
+      "role_hint": "population",
+      "concepts": [
+        {
+          "concept": "varicella",
+          "synonyms": ["chickenpox", "varicella zoster virus", "VZV infection", "primary varicella"],
+          "mesh_descriptor": "Chickenpox",
+          "umls_cui": "C0008049",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "herpes zoster",
+          "synonyms": ["shingles", "zoster", "postherpetic neuralgia", "PHN"],
+          "mesh_descriptor": "Herpes Zoster",
+          "umls_cui": "C0019360",
+          "ontology_confidence": 0.99
+        }
+      ]
+    },
+    "vaccine_schedule_terms": {
+      "concept_type": "other",
+      "role_hint": "schedule_terms",
+      "concepts": [
+        {
+          "concept": "recommended age",
+          "synonyms": [
+            "vaccination age",
+            "age at vaccination",
+            "minimum age",
+            "primary series",
+            "first dose",
+            "second dose",
+            "booster dose",
+            "catch-up schedule",
+            "routine schedule",
+            "two-dose schedule",
+            "2-dose schedule"
+          ],
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "ACIP recommendation",
+          "synonyms": ["Advisory Committee on Immunization Practices", "ACIP", "CDC schedule", "CDC immunization schedule", "AAP recommendation", "American Academy of Pediatrics"],
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "12-15 months",
+          "synonyms": ["12 to 15 months", "first birthday", "between 12 and 15 months"],
+          "ontology_confidence": 0.85
+        },
+        {
+          "concept": "4-6 years",
+          "synonyms": ["4 to 6 years", "second dose age", "kindergarten age"],
+          "ontology_confidence": 0.85
+        }
+      ]
+    },
+    "vaccine_effectiveness_outcomes": {
+      "concept_type": "outcome",
+      "role_hint": "outcome",
+      "concepts": [
+        {
+          "concept": "vaccine effectiveness",
+          "synonyms": ["VE", "vaccine efficacy", "protective efficacy", "real-world effectiveness"],
+          "mesh_descriptor": "Vaccine Efficacy",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "breakthrough infection",
+          "synonyms": ["breakthrough varicella", "breakthrough disease", "vaccine breakthrough"],
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "hospitalization prevention",
+          "synonyms": [
+            "varicella hospitalization",
+            "varicella-related hospitalization",
+            "hospitalization rate",
+            "severe disease prevention"
+          ],
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "herd immunity",
+          "synonyms": ["herd protection", "community immunity", "population immunity"],
+          "mesh_descriptor": "Immunity, Herd",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "mortality reduction",
+          "synonyms": ["varicella mortality", "death prevention"],
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "complications prevention",
+          "synonyms": ["secondary bacterial infection", "encephalitis", "pneumonia"],
+          "ontology_confidence": 0.85
+        },
+        {
+          "concept": "post-herpetic neuralgia prevention",
+          "synonyms": ["PHN prevention", "PHN reduction"],
+          "ontology_confidence": 0.85
+        }
+      ]
+    },
+    "other_routine_vaccines": {
+      "concept_type": "vaccine",
+      "role_hint": "intervention",
+      "concepts": [
+        {
+          "concept": "MMR vaccine",
+          "synonyms": ["measles-mumps-rubella", "MMR"],
+          "mesh_descriptor": "Measles-Mumps-Rubella Vaccine",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "HPV vaccine",
+          "synonyms": ["human papillomavirus vaccine", "Gardasil", "Gardasil 9", "HPV9", "Cervarix"],
+          "mesh_descriptor": "Papillomavirus Vaccines",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "DTaP vaccine",
+          "synonyms": ["diphtheria tetanus pertussis", "Tdap", "DTP"],
+          "mesh_descriptor": "Diphtheria-Tetanus-acellular Pertussis Vaccines",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "pneumococcal vaccine",
+          "synonyms": ["PCV13", "PCV15", "PCV20", "PPSV23", "Prevnar"],
+          "mesh_descriptor": "Pneumococcal Vaccines",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "influenza vaccine",
+          "synonyms": ["flu vaccine", "flu shot", "influenza shot", "IIV", "LAIV"],
+          "mesh_descriptor": "Influenza Vaccines",
+          "ontology_confidence": 0.99
+        }
+      ]
+    }
+  },
+  "question_subtype_hints": {
+    "immunization_schedule": [
+      "recommended age", "when to vaccinate", "vaccination schedule",
+      "primary series", "booster", "catch-up", "first dose", "second dose",
+      "two-dose schedule"
+    ],
+    "vaccine_effectiveness_benefit": [
+      "benefit of", "benefits of", "effectiveness", "efficacy",
+      "prevent", "prevention", "protect", "reduces", "hospitalization",
+      "herd immunity", "mortality"
+    ]
+  },
+  "multi_intent_connectors": [
+    "? what is", "? what are", " and what is", " and what are",
+    " and the benefit", " and what benefit", " and how"
+  ],
+  "negative_context_patterns": []
+}

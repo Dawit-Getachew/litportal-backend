@@ -1,0 +1,80 @@
+{
+  "version": "phase5f_v1",
+  "source": "manually_verified_RxNav_v1",
+  "notes": "Curated RxNorm RxCUIs + drug-class mappings. confidence>=0.85 → use as an RxNorm-derived term in compiled queries. NEVER hallucinate RxNorm entries — only add after verifying in https://mor.nlm.nih.gov/RxNav/.",
+  "drug_class_mappings": [
+    {
+      "class_concept": "GLP-1 receptor agonists",
+      "class_synonyms": ["GLP-1 RAs", "GLP-1RA", "GLP1-RA", "incretin mimetics", "GLP-1 agonists", "glucagon-like peptide-1 receptor agonists"],
+      "members": [
+        {"concept": "semaglutide", "rxcui": "1991302", "synonyms": ["Ozempic", "Wegovy", "Rybelsus"], "confidence": 0.99},
+        {"concept": "liraglutide", "rxcui": "475968", "synonyms": ["Victoza", "Saxenda"], "confidence": 0.99},
+        {"concept": "dulaglutide", "rxcui": "1551291", "synonyms": ["Trulicity"], "confidence": 0.99},
+        {"concept": "exenatide", "rxcui": "60548", "synonyms": ["Byetta", "Bydureon"], "confidence": 0.99},
+        {"concept": "lixisenatide", "rxcui": "1440051", "synonyms": ["Adlyxin"], "confidence": 0.95},
+        {"concept": "albiglutide", "rxcui": "1534765", "synonyms": ["Tanzeum"], "confidence": 0.90}
+      ],
+      "ontology_confidence": 0.95
+    },
+    {
+      "class_concept": "dual GIP/GLP-1 receptor agonists",
+      "class_synonyms": ["GIP/GLP-1 RA", "dual GIP and GLP-1 receptor agonist"],
+      "members": [
+        {"concept": "tirzepatide", "rxcui": "2601723", "synonyms": ["Mounjaro", "Zepbound"], "confidence": 0.99}
+      ],
+      "ontology_confidence": 0.90,
+      "is_glp1_ra": false
+    },
+    {
+      "class_concept": "SGLT2 inhibitors",
+      "class_synonyms": ["sodium-glucose co-transporter-2 inhibitors", "SGLT2i", "gliflozins"],
+      "members": [
+        {"concept": "empagliflozin", "rxcui": "1545653", "synonyms": ["Jardiance"], "confidence": 0.99},
+        {"concept": "dapagliflozin", "rxcui": "1486436", "synonyms": ["Farxiga", "Forxiga"], "confidence": 0.99},
+        {"concept": "canagliflozin", "rxcui": "1373458", "synonyms": ["Invokana"], "confidence": 0.99},
+        {"concept": "ertugliflozin", "rxcui": "1992672", "synonyms": ["Steglatro"], "confidence": 0.95}
+      ],
+      "ontology_confidence": 0.95
+    },
+    {
+      "class_concept": "DPP-4 inhibitors",
+      "class_synonyms": ["dipeptidyl peptidase-4 inhibitors", "gliptins"],
+      "members": [
+        {"concept": "sitagliptin", "rxcui": "593411", "synonyms": ["Januvia"], "confidence": 0.99},
+        {"concept": "saxagliptin", "rxcui": "1043562", "synonyms": ["Onglyza"], "confidence": 0.99},
+        {"concept": "linagliptin", "rxcui": "1100699", "synonyms": ["Tradjenta"], "confidence": 0.99},
+        {"concept": "alogliptin", "rxcui": "1368000", "synonyms": ["Nesina"], "confidence": 0.95}
+      ],
+      "ontology_confidence": 0.90,
+      "is_glp1_ra": false
+    },
+    {
+      "class_concept": "statins",
+      "class_synonyms": ["HMG-CoA reductase inhibitors"],
+      "members": [
+        {"concept": "atorvastatin", "rxcui": "83367", "synonyms": ["Lipitor"], "confidence": 0.99},
+        {"concept": "rosuvastatin", "rxcui": "301542", "synonyms": ["Crestor"], "confidence": 0.99},
+        {"concept": "simvastatin", "rxcui": "36567", "synonyms": ["Zocor"], "confidence": 0.99},
+        {"concept": "pravastatin", "rxcui": "42463", "synonyms": ["Pravachol"], "confidence": 0.99},
+        {"concept": "pitavastatin", "rxcui": "861634", "synonyms": ["Livalo"], "confidence": 0.99}
+      ],
+      "ontology_confidence": 0.95
+    },
+    {
+      "class_concept": "PCSK9 inhibitors",
+      "class_synonyms": ["proprotein convertase subtilisin/kexin type 9 inhibitors"],
+      "members": [
+        {"concept": "evolocumab", "rxcui": "1666332", "synonyms": ["Repatha"], "confidence": 0.99},
+        {"concept": "alirocumab", "rxcui": "1659151", "synonyms": ["Praluent"], "confidence": 0.99}
+      ],
+      "ontology_confidence": 0.95
+    }
+  ],
+  "single_drug_entries": [
+    {"concept": "milrinone", "rxcui": "6904", "synonyms": ["Primacor"], "class_concept": "PDE3 inhibitor", "confidence": 0.99},
+    {"concept": "warfarin", "rxcui": "11289", "class_concept": "vitamin K antagonist", "confidence": 0.99},
+    {"concept": "apixaban", "rxcui": "1364430", "class_concept": "factor Xa inhibitor", "synonyms": ["Eliquis"], "confidence": 0.99},
+    {"concept": "rivaroxaban", "rxcui": "1114195", "class_concept": "factor Xa inhibitor", "synonyms": ["Xarelto"], "confidence": 0.99},
+    {"concept": "metformin", "rxcui": "6809", "class_concept": "biguanide", "synonyms": ["Glucophage"], "confidence": 0.99}
+  ]
+}

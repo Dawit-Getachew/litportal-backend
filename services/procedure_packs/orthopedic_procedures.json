@@ -1,0 +1,101 @@
+{
+  "name": "orthopedic_procedures",
+  "specialty": ["orthopedics", "orthopedic surgery"],
+  "description": "Phase 6G.4P — orthopedic procedures. Canonical concepts cover total hip arthroplasty, total knee arthroplasty, and hip fracture surgery. MeSH descriptors are OMITTED unless verified by the existing curated MeSH resolver. Management domains center on VTE prophylaxis, antibiotic prophylaxis, pain control, and rehabilitation.",
+  "entries": [
+    {
+      "canonical_concept": "total hip arthroplasty",
+      "procedure_family": "joint_arthroplasty",
+      "specialty": ["orthopedics", "orthopedic surgery"],
+      "synonyms": [
+        "total hip replacement",
+        "hip replacement",
+        "primary hip arthroplasty",
+        "hip arthroplasty"
+      ],
+      "acronyms": ["THA", "THR"],
+      "related_but_distinct": [
+        "hemiarthroplasty",
+        "hip resurfacing",
+        "revision hip arthroplasty"
+      ],
+      "management_domains": [
+        "vte_prophylaxis",
+        "anticoagulation",
+        "antibiotic_prophylaxis",
+        "pain_control",
+        "rehabilitation"
+      ],
+      "search_terms": [
+        "total hip arthroplasty",
+        "total hip replacement",
+        "hip replacement",
+        "VTE prophylaxis",
+        "venous thromboembolism prophylaxis"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "total knee arthroplasty",
+      "procedure_family": "joint_arthroplasty",
+      "specialty": ["orthopedics", "orthopedic surgery"],
+      "synonyms": [
+        "total knee replacement",
+        "knee replacement",
+        "primary knee arthroplasty",
+        "knee arthroplasty"
+      ],
+      "acronyms": ["TKA", "TKR"],
+      "related_but_distinct": [
+        "unicompartmental knee arthroplasty",
+        "revision knee arthroplasty"
+      ],
+      "management_domains": [
+        "vte_prophylaxis",
+        "anticoagulation",
+        "antibiotic_prophylaxis",
+        "pain_control",
+        "rehabilitation"
+      ],
+      "search_terms": [
+        "total knee arthroplasty",
+        "total knee replacement",
+        "knee replacement",
+        "VTE prophylaxis"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "hip fracture surgery",
+      "procedure_family": "fracture_repair",
+      "specialty": ["orthopedics", "orthopedic surgery"],
+      "synonyms": [
+        "hip fracture repair",
+        "femoral neck fracture surgery",
+        "intertrochanteric fracture fixation",
+        "hemiarthroplasty for hip fracture",
+        "open reduction internal fixation hip"
+      ],
+      "acronyms": ["ORIF"],
+      "related_but_distinct": [
+        "total hip arthroplasty",
+        "elective hip replacement"
+      ],
+      "management_domains": [
+        "vte_prophylaxis",
+        "anticoagulation",
+        "antibiotic_prophylaxis",
+        "pain_control",
+        "rehabilitation"
+      ],
+      "search_terms": [
+        "hip fracture surgery",
+        "hip fracture repair",
+        "femoral neck fracture",
+        "intertrochanteric fracture",
+        "VTE prophylaxis"
+      ],
+      "negative_patterns": []
+    }
+  ]
+}

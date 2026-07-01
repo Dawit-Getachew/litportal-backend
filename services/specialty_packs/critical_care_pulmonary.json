@@ -1,0 +1,208 @@
+{
+  "name": "critical_care_pulmonary",
+  "specialty": "critical_care",
+  "secondary_specialties": ["pulmonology", "anesthesiology", "internal_medicine"],
+  "description": "Phase 5F — critical-care + pulmonary specialty pack. Used by ClinicalOntologyMapperService and ClinicalRoleRepairService for ARDS, mechanical ventilation, sepsis-related corticosteroid, and acute lung injury questions (e.g., 'what is the right timing and dose to administer steroids for patients with ARDS?').",
+  "concept_groups": {
+    "ards_condition": {
+      "concept_type": "disease",
+      "role_hint": "population",
+      "concepts": [
+        {
+          "concept": "acute respiratory distress syndrome",
+          "synonyms": [
+            "ARDS",
+            "acute lung injury",
+            "ALI",
+            "acute hypoxemic respiratory failure",
+            "Berlin definition ARDS",
+            "moderate-severe ARDS",
+            "non-cardiogenic pulmonary edema"
+          ],
+          "mesh_descriptor": "Respiratory Distress Syndrome",
+          "umls_cui": "C0035222",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "acute lung injury",
+          "synonyms": ["ALI", "transfusion-related acute lung injury", "TRALI"],
+          "mesh_descriptor": "Acute Lung Injury",
+          "umls_cui": "C0855119",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "acute hypoxemic respiratory failure",
+          "synonyms": ["AHRF", "hypoxemic respiratory failure"],
+          "mesh_descriptor": "Respiratory Insufficiency",
+          "ontology_confidence": 0.90
+        }
+      ]
+    },
+    "corticosteroids": {
+      "class_name": "corticosteroids",
+      "concept_type": "drug_class",
+      "role_hint": "intervention",
+      "synonyms": [
+        "corticosteroid",
+        "corticosteroids",
+        "glucocorticoid",
+        "glucocorticoids",
+        "systemic steroids",
+        "systemic corticosteroids",
+        "systemic glucocorticoids",
+        "intravenous steroids",
+        "high-dose steroids",
+        "low-dose steroids",
+        "steroid therapy",
+        "steroid treatment",
+        "steroids"
+      ],
+      "members": [
+        {
+          "concept": "methylprednisolone",
+          "synonyms": ["Solu-Medrol", "Medrol", "methylpred"],
+          "mesh_descriptor": "Methylprednisolone",
+          "rxnorm_rxcui": "6902",
+          "umls_cui": "C0025815",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "dexamethasone",
+          "synonyms": ["Decadron", "DexPak"],
+          "mesh_descriptor": "Dexamethasone",
+          "rxnorm_rxcui": "3264",
+          "umls_cui": "C0011777",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "hydrocortisone",
+          "synonyms": ["Cortef", "Solu-Cortef", "cortisol"],
+          "mesh_descriptor": "Hydrocortisone",
+          "rxnorm_rxcui": "5492",
+          "umls_cui": "C0020268",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "prednisolone",
+          "synonyms": ["Prelone", "Orapred"],
+          "mesh_descriptor": "Prednisolone",
+          "rxnorm_rxcui": "8638",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "prednisone",
+          "synonyms": ["Deltasone"],
+          "mesh_descriptor": "Prednisone",
+          "rxnorm_rxcui": "8640",
+          "ontology_confidence": 0.95
+        }
+      ],
+      "mesh_class_descriptors": [
+        "Adrenal Cortex Hormones",
+        "Glucocorticoids"
+      ],
+      "ontology_confidence": 0.95
+    },
+    "ventilation_interventions": {
+      "concept_type": "procedure",
+      "role_hint": "intervention",
+      "concepts": [
+        {
+          "concept": "mechanical ventilation",
+          "synonyms": ["invasive ventilation", "ventilator support", "intubation"],
+          "mesh_descriptor": "Respiration, Artificial",
+          "umls_cui": "C0199470",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "positive end-expiratory pressure",
+          "synonyms": ["PEEP", "high PEEP", "low PEEP"],
+          "mesh_descriptor": "Positive-Pressure Respiration",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "prone positioning",
+          "synonyms": ["proning", "prone ventilation"],
+          "mesh_descriptor": "Prone Position",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "extracorporeal membrane oxygenation",
+          "synonyms": ["ECMO", "VV-ECMO", "venovenous ECMO"],
+          "mesh_descriptor": "Extracorporeal Membrane Oxygenation",
+          "umls_cui": "C0015357",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "low tidal volume ventilation",
+          "synonyms": ["lung-protective ventilation", "LTV", "6 mL/kg"],
+          "ontology_confidence": 0.90
+        }
+      ]
+    },
+    "ards_outcomes": {
+      "concept_type": "outcome",
+      "role_hint": "outcome",
+      "concepts": [
+        {
+          "concept": "all-cause mortality",
+          "synonyms": ["mortality", "28-day mortality", "60-day mortality", "ICU mortality", "hospital mortality"],
+          "mesh_descriptor": "Mortality",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "ventilator-free days",
+          "synonyms": ["VFD", "ventilator free days"],
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "PaO2/FiO2 ratio",
+          "synonyms": ["P/F ratio", "oxygenation index", "PaO2 FiO2"],
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "ICU length of stay",
+          "synonyms": ["ICU LOS", "intensive care length of stay"],
+          "ontology_confidence": 0.90
+        }
+      ]
+    },
+    "dose_timing_modifiers": {
+      "concept_type": "other",
+      "role_hint": "dose_terms",
+      "concepts": [
+        {
+          "concept": "early administration",
+          "synonyms": ["early treatment", "within 24 hours", "within 48 hours", "early-phase", "within first week"],
+          "ontology_confidence": 0.85
+        },
+        {
+          "concept": "late administration",
+          "synonyms": ["late treatment", "after 14 days", "late-phase"],
+          "ontology_confidence": 0.85
+        },
+        {
+          "concept": "high-dose",
+          "synonyms": ["high dose", "pulse dose", "methylprednisolone pulse"],
+          "ontology_confidence": 0.85
+        },
+        {
+          "concept": "low-dose",
+          "synonyms": ["low dose", "physiologic dose", "stress dose"],
+          "ontology_confidence": 0.85
+        }
+      ]
+    }
+  },
+  "question_subtype_hints": {
+    "timing_dose_protocol": [
+      "right timing", "optimal dose", "when to start", "how long",
+      "duration", "tapering", "weaning", "initiate", "early vs late"
+    ]
+  },
+  "negative_context_patterns": [
+    "rodent model of ARDS",
+    "murine ARDS model",
+    "in vitro alveolar epithelial cells"
+  ]
+}

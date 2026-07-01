@@ -1,0 +1,95 @@
+{
+  "name": "hematology_procedures",
+  "specialty": ["hematology", "oncology", "transplant"],
+  "description": "Phase H2 — hematology/oncology procedures. Canonical concepts cover autologous + allogeneic hematopoietic stem cell transplant. Post-transplant medication / maintenance / consolidation queries (e.g. rituximab maintenance after ASCT) route through the post-procedure router via the new `post_transplant_medication_management` subdomain. Lymphoma / multiple myeloma surface as RELATED-BUT-DISTINCT — they are conditions, not procedures, and must not collapse into a single anchor.",
+  "entries": [
+    {
+      "canonical_concept": "autologous stem cell transplant",
+      "procedure_family": "solid_organ_transplant",
+      "specialty": ["hematology", "oncology", "transplant"],
+      "synonyms": [
+        "autologous hematopoietic stem cell transplant",
+        "autologous hematopoietic cell transplant",
+        "autologous HSCT",
+        "autologous HCT",
+        "autologous bone marrow transplant",
+        "autologous transplant",
+        "stem cell transplant",
+        "autologous stem cell transplantation",
+        "autologous peripheral blood stem cell transplant"
+      ],
+      "acronyms": ["ASCT", "auto-HSCT", "AHSCT", "auto-HCT", "auto-BMT"],
+      "related_but_distinct": [
+        "allogeneic stem cell transplant",
+        "allogeneic HSCT",
+        "allo-HSCT",
+        "umbilical cord blood transplant",
+        "haploidentical transplant",
+        "CAR-T cell therapy",
+        "multiple myeloma",
+        "lymphoma",
+        "diffuse large B-cell lymphoma",
+        "Hodgkin lymphoma"
+      ],
+      "management_domains": [
+        "immunosuppression",
+        "infection_prophylaxis",
+        "antibiotic_prophylaxis",
+        "antithrombotic_therapy",
+        "vte_prophylaxis",
+        "surveillance",
+        "follow_up_imaging"
+      ],
+      "search_terms": [
+        "autologous stem cell transplant",
+        "autologous hematopoietic stem cell transplantation",
+        "ASCT",
+        "auto-HSCT",
+        "rituximab maintenance",
+        "post-transplant consolidation",
+        "post-transplant maintenance"
+      ],
+      "negative_patterns": [
+        "allogeneic only",
+        "allo-HSCT only"
+      ]
+    },
+    {
+      "canonical_concept": "allogeneic stem cell transplant",
+      "procedure_family": "solid_organ_transplant",
+      "specialty": ["hematology", "oncology", "transplant"],
+      "synonyms": [
+        "allogeneic hematopoietic stem cell transplant",
+        "allogeneic hematopoietic cell transplant",
+        "allogeneic HSCT",
+        "allogeneic transplant",
+        "allogeneic bone marrow transplant"
+      ],
+      "acronyms": ["allo-HSCT", "alloHSCT", "allo-HCT", "allo-BMT"],
+      "related_but_distinct": [
+        "autologous stem cell transplant",
+        "autologous HSCT",
+        "umbilical cord blood transplant",
+        "haploidentical transplant"
+      ],
+      "management_domains": [
+        "immunosuppression",
+        "infection_prophylaxis",
+        "antibiotic_prophylaxis",
+        "antithrombotic_therapy",
+        "vte_prophylaxis",
+        "surveillance"
+      ],
+      "search_terms": [
+        "allogeneic stem cell transplant",
+        "allogeneic hematopoietic stem cell transplantation",
+        "allo-HSCT",
+        "GVHD prophylaxis",
+        "post-transplant cyclophosphamide"
+      ],
+      "negative_patterns": [
+        "autologous only"
+      ]
+    }
+  ]
+}

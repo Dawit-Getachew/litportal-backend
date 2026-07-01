@@ -1,0 +1,102 @@
+{
+  "name": "transplant_procedures",
+  "specialty": ["transplant", "nephrology", "hepatology", "cardiology"],
+  "description": "Phase 6G.4P — solid organ transplant procedures. Canonical concepts cover kidney transplant, liver transplant, and heart transplant. Management domains center on induction / maintenance immunosuppression, infection prophylaxis, and rejection surveillance. MeSH descriptors are OMITTED — the existing curated MeSH resolver does not contain transplant descriptors.",
+  "entries": [
+    {
+      "canonical_concept": "kidney transplant",
+      "procedure_family": "solid_organ_transplant",
+      "specialty": ["transplant", "nephrology"],
+      "synonyms": [
+        "renal transplant",
+        "renal transplantation",
+        "kidney transplantation",
+        "living donor kidney transplant",
+        "deceased donor kidney transplant"
+      ],
+      "acronyms": [],
+      "related_but_distinct": [
+        "pancreas-kidney transplant",
+        "simultaneous pancreas-kidney transplant",
+        "SPK"
+      ],
+      "management_domains": [
+        "immunosuppression",
+        "infection_prophylaxis",
+        "rejection_surveillance",
+        "antibiotic_prophylaxis"
+      ],
+      "search_terms": [
+        "kidney transplant",
+        "kidney transplantation",
+        "renal transplantation",
+        "immunosuppression",
+        "calcineurin inhibitor",
+        "tacrolimus",
+        "mycophenolate"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "liver transplant",
+      "procedure_family": "solid_organ_transplant",
+      "specialty": ["transplant", "hepatology"],
+      "synonyms": [
+        "hepatic transplant",
+        "liver transplantation",
+        "hepatic transplantation",
+        "orthotopic liver transplant"
+      ],
+      "acronyms": ["OLT"],
+      "related_but_distinct": [
+        "living donor liver transplant",
+        "split liver transplant"
+      ],
+      "management_domains": [
+        "immunosuppression",
+        "infection_prophylaxis",
+        "rejection_surveillance",
+        "antibiotic_prophylaxis"
+      ],
+      "search_terms": [
+        "liver transplant",
+        "liver transplantation",
+        "hepatic transplantation",
+        "immunosuppression",
+        "tacrolimus"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "heart transplant",
+      "procedure_family": "solid_organ_transplant",
+      "specialty": ["transplant", "cardiology"],
+      "synonyms": [
+        "cardiac transplant",
+        "heart transplantation",
+        "cardiac transplantation",
+        "orthotopic heart transplant"
+      ],
+      "acronyms": [],
+      "related_but_distinct": [
+        "heart-lung transplant",
+        "ventricular assist device",
+        "LVAD"
+      ],
+      "management_domains": [
+        "immunosuppression",
+        "infection_prophylaxis",
+        "rejection_surveillance",
+        "antibiotic_prophylaxis"
+      ],
+      "search_terms": [
+        "heart transplant",
+        "cardiac transplant",
+        "heart transplantation",
+        "immunosuppression",
+        "endomyocardial biopsy"
+      ],
+      "negative_patterns": []
+    }
+  ]
+}

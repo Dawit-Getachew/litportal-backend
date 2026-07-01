@@ -1,0 +1,197 @@
+{
+  "name": "cardiology_transfusion",
+  "specialty": "cardiology",
+  "description": "Phase 5B — cardiology / transfusion specialty pack. Used by the ClinicalConceptTranslationService and the picott ranker for AMI hemoglobin/transfusion-threshold questions.",
+  "ami_variants": [
+    "acute myocardial infarction",
+    "AMI",
+    "acute MI",
+    "myocardial infarction",
+    "MI",
+    "ACS",
+    "acute coronary syndrome",
+    "STEMI",
+    "NSTEMI",
+    "ST-elevation myocardial infarction",
+    "non-ST-elevation myocardial infarction",
+    "myocardial ischemia",
+    "ischemic heart disease"
+  ],
+  "hemoglobin_anemia_variants": [
+    "hemoglobin",
+    "haemoglobin",
+    "Hb",
+    "Hgb",
+    "anemia",
+    "anaemia"
+  ],
+  "transfusion_strategy_terms": [
+    "transfusion",
+    "red blood cell transfusion",
+    "RBC transfusion",
+    "blood transfusion",
+    "transfusion strategy",
+    "transfusion threshold",
+    "liberal transfusion",
+    "liberal transfusion strategy",
+    "restrictive transfusion",
+    "restrictive transfusion strategy",
+    "hemoglobin target",
+    "haemoglobin target",
+    "hemoglobin threshold",
+    "haemoglobin threshold",
+    "transfusion target",
+    "higher hemoglobin",
+    "lower hemoglobin",
+    "high hemoglobin",
+    "low hemoglobin",
+    "high hemoglobin target",
+    "low hemoglobin target",
+    "higher transfusion threshold",
+    "lower transfusion threshold"
+  ],
+  "outcomes": [
+    "death",
+    "all-cause mortality",
+    "cardiovascular mortality",
+    "recurrent myocardial infarction",
+    "recurrent MI",
+    "reinfarction",
+    "major adverse cardiovascular events",
+    "MACE",
+    "stroke",
+    "heart failure",
+    "ischemic events"
+  ],
+  "trial_acronyms": [
+    "MINT",
+    "REALITY",
+    "CRIT",
+    "TRACS",
+    "TITRe2",
+    "MINT trial",
+    "REALITY trial",
+    "CRIT trial"
+  ],
+  "context_terms": [
+    "cardiac surgery",
+    "intensive care",
+    "ICU",
+    "trauma",
+    "GI bleeding",
+    "gastrointestinal bleeding"
+  ],
+  "negative_context_patterns": [
+    "cardiac surgery transfusion threshold without AMI",
+    "ICU transfusion threshold without MI",
+    "trauma transfusion threshold",
+    "GI bleeding transfusion threshold",
+    "hemoglobin A1c"
+  ],
+  "concept_groups": {
+    "transfusion_threshold_intervention": {
+      "concept_type": "procedure",
+      "role_hint": "intervention",
+      "question_type_hint": "therapy",
+      "question_subtype_hint": "transfusion_threshold_comparison",
+      "specialty_tags": ["Cardiology", "Hematology", "Transfusion Medicine"],
+      "concepts": [
+        {
+          "concept": "transfusion threshold",
+          "synonyms": [
+            "restrictive transfusion strategy",
+            "liberal transfusion strategy",
+            "transfusion threshold comparison",
+            "restrictive vs liberal transfusion",
+            "liberal vs restrictive transfusion",
+            "hemoglobin transfusion threshold",
+            "Hgb transfusion threshold",
+            "blood transfusion threshold",
+            "hemoglobin target",
+            "haemoglobin target",
+            "hemoglobin threshold",
+            "haemoglobin threshold",
+            "high hemoglobin target",
+            "low hemoglobin target",
+            "higher hemoglobin",
+            "lower hemoglobin",
+            "high hemoglobin",
+            "low hemoglobin",
+            "higher transfusion threshold",
+            "lower transfusion threshold"
+          ],
+          "mesh_descriptor": "Blood Transfusion",
+          "umls_cui": "C0005841",
+          "ontology_confidence": 0.92
+        },
+        {
+          "concept": "red blood cell transfusion",
+          "synonyms": [
+            "RBC transfusion",
+            "packed red blood cell transfusion",
+            "PRBC transfusion",
+            "transfusion of red blood cells",
+            "blood transfusion",
+            "erythrocyte transfusion",
+            "packed red blood cells"
+          ],
+          "mesh_descriptor": "Erythrocyte Transfusion",
+          "umls_cui": "C0014202",
+          "ontology_confidence": 0.95
+        }
+      ]
+    },
+    "transfusion_intervention": {
+      "concept_type": "procedure",
+      "role_hint": "intervention",
+      "concepts": [
+        {
+          "concept": "red blood cell transfusion",
+          "synonyms": [
+            "RBC transfusion",
+            "blood transfusion",
+            "erythrocyte transfusion",
+            "packed red blood cells",
+            "PRBC transfusion",
+            "transfusion",
+            "transfusion strategy",
+            "transfusion threshold"
+          ],
+          "mesh_descriptor": "Erythrocyte Transfusion",
+          "umls_cui": "C0014202",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "liberal transfusion strategy",
+          "synonyms": ["liberal transfusion", "higher hemoglobin threshold", "liberal RBC strategy"],
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "restrictive transfusion strategy",
+          "synonyms": ["restrictive transfusion", "lower hemoglobin threshold", "restrictive RBC strategy"],
+          "ontology_confidence": 0.90
+        }
+      ]
+    },
+    "ami_population": {
+      "concept_type": "disease",
+      "role_hint": "population",
+      "concepts": [
+        {
+          "concept": "acute myocardial infarction",
+          "synonyms": ["AMI", "acute MI", "STEMI", "NSTEMI", "ST-elevation myocardial infarction", "non-ST-elevation myocardial infarction", "acute coronary syndrome", "ACS"],
+          "mesh_descriptor": "Myocardial Infarction",
+          "umls_cui": "C0027051",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "anemia",
+          "synonyms": ["anaemia", "low hemoglobin", "hemoglobin deficiency"],
+          "mesh_descriptor": "Anemia",
+          "umls_cui": "C0002871",
+          "ontology_confidence": 0.99
+        }
+      ]
+    }
+  }
+}

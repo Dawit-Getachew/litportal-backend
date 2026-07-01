@@ -1,0 +1,45 @@
+# Local dev stack for litportal-backend: the FastAPI app + a MongoDB instance.
+# Bring up with:  docker compose up --build
+# The Scienthesis integration flags default OFF, so this runs standalone.
+# To wire Identity/LitHub, add the integration vars to a local .env
+# (see .env.example) and set the flags to true.
+
+services:
+  litportal-mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - litportal_mongo_data:/data/db
+
+  litportal-backend:
+    build: .
+    restart: unless-stopped
+    # Optional: layer a local .env on top of the inline values below.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MONGO_URL: mongodb://litportal-mongo:27017
+      DB_NAME: litportal
+      APP_ENV: development
+      HOST: 0.0.0.0
+      PORT: "8000"
+      # Stable native JWT secrets so tokens survive restarts in dev.
+      JWT_ACCESS_SECRET: dev-access-secret-change-me
+      JWT_REFRESH_SECRET: dev-refresh-secret-change-me
+      # Integration is OFF by default; uncomment + point at the services to enable.
+      # LITPORTAL_USE_IDENTITY: "true"
+      # LITPORTAL_DUAL_WRITE_LITHUB: "true"
+      # IDENTITY_BASE_URL: http://host.docker.internal:8100
+      # IDENTITY_JWKS_URL: http://host.docker.internal:8100/.well-known/jwks.json
+      # LITHUB_BASE_URL: http://host.docker.internal:8200
+      # SERVICE_TOKEN_SECRET: shared-secret-across-all-services
+    ports:
+      - "8000:8000"
+    depends_on:
+      - litportal-mongo
+
+volumes:
+  litportal_mongo_data:

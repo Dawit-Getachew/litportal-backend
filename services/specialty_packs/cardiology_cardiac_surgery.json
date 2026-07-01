@@ -1,0 +1,182 @@
+{
+  "name": "cardiology_cardiac_surgery",
+  "specialty": "cardiology / cardiac surgery",
+  "secondary_specialties": ["cardiac surgery", "internal_medicine"],
+  "description": "Phase 6G.4 — cardiology / cardiac surgery specialty pack. Supports post-procedure management questions (e.g., 'recommendations for anticoagulation after aortic valve surgery'). Closed-set, curated; no fabricated identifiers. Related-but-distinct conditions (transcatheter / TAVR) are NEVER collapsed into surgical aortic valve replacement and must be capped during ranking. mesh_terms are deliberately omitted on entries the curated MeSH resolver does not validate (Heart Valve Prosthesis, Aortic Valve, Anticoagulants, Warfarin, Platelet Aggregation Inhibitors, Postoperative Care, Practice Guidelines as Topic) — falling back to title/abstract terms in the boolean compiler.",
+  "concept_groups": {
+    "aortic_valve_procedure": {
+      "concept_type": "procedure",
+      "role_hint": "population",
+      "question_type_hint": "guideline",
+      "question_subtype_hint": "post_procedure_antithrombotic_management",
+      "concepts": [
+        {
+          "concept": "aortic valve replacement",
+          "synonyms": [
+            "aortic valve surgery",
+            "surgical aortic valve replacement",
+            "SAVR",
+            "aortic valve repair",
+            "heart valve surgery",
+            "heart valve replacement",
+            "valve replacement"
+          ],
+          "ontology_confidence": 0.98
+        }
+      ]
+    },
+    "prosthetic_valve_types": {
+      "concept_type": "procedure",
+      "role_hint": "population",
+      "question_type_hint": "guideline",
+      "question_subtype_hint": "post_procedure_antithrombotic_management",
+      "concepts": [
+        {
+          "concept": "mechanical aortic valve",
+          "synonyms": [
+            "mechanical valve replacement",
+            "mechanical valve",
+            "mechanical heart valve",
+            "prosthetic mechanical valve"
+          ],
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "bioprosthetic aortic valve",
+          "synonyms": [
+            "bioprosthetic valve replacement",
+            "bioprosthetic valve",
+            "tissue valve",
+            "biological valve"
+          ],
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "prosthetic heart valve",
+          "synonyms": [
+            "prosthetic valve",
+            "valve prosthesis"
+          ],
+          "ontology_confidence": 0.92
+        }
+      ]
+    },
+    "transcatheter_valve_intervention": {
+      "description": "Related-but-distinct from surgical aortic valve replacement. TAVR-only articles must be capped ≤70 when the user query asks about surgery.",
+      "concept_type": "procedure",
+      "role_hint": "population",
+      "related_but_distinct": true,
+      "concepts": [
+        {
+          "concept": "transcatheter aortic valve replacement",
+          "synonyms": [
+            "TAVR",
+            "TAVI",
+            "transcatheter aortic valve implantation",
+            "transcatheter valve intervention"
+          ],
+          "ontology_confidence": 0.95,
+          "related_but_distinct_from": "aortic valve replacement",
+          "related_but_distinct_cap": 70
+        }
+      ]
+    },
+    "antithrombotic_management": {
+      "concept_type": "drug_class_or_management",
+      "role_hint": "intervention",
+      "question_type_hint": "guideline",
+      "question_subtype_hint": "post_procedure_antithrombotic_management",
+      "concepts": [
+        {
+          "concept": "antithrombotic therapy",
+          "synonyms": [
+            "anticoagulation",
+            "anticoagulant therapy",
+            "anticoagulants",
+            "antithrombotic treatment",
+            "antiplatelet therapy",
+            "anti-thrombotic therapy"
+          ],
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "warfarin",
+          "synonyms": [
+            "vitamin K antagonist",
+            "VKA",
+            "coumarin",
+            "coumadin"
+          ],
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "direct oral anticoagulant",
+          "synonyms": [
+            "DOAC",
+            "NOAC",
+            "novel oral anticoagulant",
+            "apixaban",
+            "rivaroxaban",
+            "dabigatran",
+            "edoxaban"
+          ],
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "aspirin",
+          "synonyms": [
+            "acetylsalicylic acid",
+            "ASA",
+            "low-dose aspirin"
+          ],
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "heparin",
+          "synonyms": [
+            "low molecular weight heparin",
+            "LMWH",
+            "unfractionated heparin",
+            "bridging anticoagulation"
+          ],
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "INR target",
+          "synonyms": [
+            "target INR",
+            "international normalized ratio",
+            "INR monitoring"
+          ],
+          "ontology_confidence": 0.9
+        }
+      ]
+    },
+    "guideline_source_concepts": {
+      "description": "Used ONLY for query expansion / lane assembly. NEVER usable as a sole clinical anchor.",
+      "concept_type": "other",
+      "role_hint": "other",
+      "concepts": [
+        {"concept": "ACC/AHA", "synonyms": ["American College of Cardiology", "American Heart Association"], "ontology_confidence": 0.9},
+        {"concept": "ESC", "synonyms": ["European Society of Cardiology"], "ontology_confidence": 0.9},
+        {"concept": "EACTS", "synonyms": ["European Association for Cardio-Thoracic Surgery"], "ontology_confidence": 0.9},
+        {"concept": "STS", "synonyms": ["Society of Thoracic Surgeons"], "ontology_confidence": 0.9},
+        {"concept": "CHEST", "synonyms": ["American College of Chest Physicians"], "ontology_confidence": 0.85}
+      ]
+    },
+    "post_procedure_outcomes": {
+      "description": "Outcome terms for query expansion + term mapping under outcomes_target_diagnosis. NEVER usable as a sole clinical anchor.",
+      "concept_type": "outcome",
+      "role_hint": "outcome",
+      "concepts": [
+        {"concept": "thromboembolism", "synonyms": ["thromboembolic event"], "ontology_confidence": 0.9},
+        {"concept": "systemic embolism", "synonyms": [], "ontology_confidence": 0.9},
+        {"concept": "stroke", "synonyms": ["ischemic stroke", "cerebrovascular event"], "ontology_confidence": 0.95},
+        {"concept": "valve thrombosis", "synonyms": ["prosthetic valve thrombosis"], "ontology_confidence": 0.95},
+        {"concept": "bleeding", "synonyms": ["major bleeding", "hemorrhage"], "ontology_confidence": 0.9},
+        {"concept": "mortality", "synonyms": ["death", "all-cause mortality"], "ontology_confidence": 0.9},
+        {"concept": "atrial fibrillation", "synonyms": ["AF", "afib"], "ontology_confidence": 0.95}
+      ]
+    }
+  }
+}

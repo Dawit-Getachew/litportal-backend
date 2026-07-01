@@ -1,0 +1,137 @@
+{
+  "name": "gastrointestinal_procedures",
+  "specialty": ["gastroenterology", "general surgery"],
+  "description": "Phase 6G.4P — gastrointestinal procedures. Canonical concepts cover diagnostic colonoscopy, colonoscopy with polypectomy, colorectal cancer resection, and bariatric surgery. MeSH descriptors are OMITTED unless verified by the existing curated MeSH resolver (Colorectal Neoplasms IS verified; polypectomy / colonoscopy descriptors are not).",
+  "entries": [
+    {
+      "canonical_concept": "colonoscopy",
+      "procedure_family": "endoscopy_diagnostic",
+      "specialty": ["gastroenterology"],
+      "synonyms": [
+        "screening colonoscopy",
+        "diagnostic colonoscopy",
+        "surveillance colonoscopy"
+      ],
+      "acronyms": [],
+      "related_but_distinct": [
+        "flexible sigmoidoscopy",
+        "upper endoscopy",
+        "EGD",
+        "esophagogastroduodenoscopy"
+      ],
+      "management_domains": [
+        "restarting_anticoagulation",
+        "anticoagulation",
+        "antiplatelet_therapy",
+        "bridging_anticoagulation"
+      ],
+      "search_terms": [
+        "colonoscopy",
+        "screening colonoscopy",
+        "diagnostic colonoscopy",
+        "anticoagulation",
+        "antiplatelet therapy"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "colonoscopy with polypectomy",
+      "procedure_family": "endoscopic_polypectomy",
+      "specialty": ["gastroenterology"],
+      "synonyms": [
+        "polypectomy",
+        "colonoscopic polypectomy",
+        "endoscopic polypectomy",
+        "endoscopic mucosal resection",
+        "EMR colonic polyp"
+      ],
+      "acronyms": ["EMR"],
+      "related_but_distinct": [
+        "colonoscopy",
+        "endoscopic submucosal dissection",
+        "ESD"
+      ],
+      "management_domains": [
+        "restarting_anticoagulation",
+        "anticoagulation",
+        "antiplatelet_therapy",
+        "bridging_anticoagulation"
+      ],
+      "search_terms": [
+        "colonoscopy with polypectomy",
+        "polypectomy",
+        "endoscopic polypectomy",
+        "post-polypectomy bleeding",
+        "anticoagulation restart"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "colorectal cancer resection",
+      "procedure_family": "colorectal_resection",
+      "specialty": ["general surgery", "colorectal surgery"],
+      "synonyms": [
+        "colon resection",
+        "colectomy",
+        "rectal resection",
+        "low anterior resection",
+        "right hemicolectomy",
+        "left hemicolectomy"
+      ],
+      "acronyms": ["LAR"],
+      "related_but_distinct": [
+        "abdominoperineal resection",
+        "APR",
+        "transanal endoscopic microsurgery"
+      ],
+      "management_domains": [
+        "vte_prophylaxis",
+        "anticoagulation",
+        "antibiotic_prophylaxis",
+        "surveillance",
+        "follow_up_imaging"
+      ],
+      "search_terms": [
+        "colorectal cancer resection",
+        "colectomy",
+        "colorectal surgery",
+        "VTE prophylaxis",
+        "surveillance"
+      ],
+      "mesh_terms_curated": ["Colorectal Neoplasms"],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "bariatric surgery",
+      "procedure_family": "bariatric_surgery",
+      "specialty": ["general surgery", "bariatric surgery"],
+      "synonyms": [
+        "weight loss surgery",
+        "Roux-en-Y gastric bypass",
+        "sleeve gastrectomy",
+        "gastric bypass surgery",
+        "vertical sleeve gastrectomy"
+      ],
+      "acronyms": ["RYGB", "VSG"],
+      "related_but_distinct": [
+        "adjustable gastric banding",
+        "biliopancreatic diversion"
+      ],
+      "management_domains": [
+        "vte_prophylaxis",
+        "anticoagulation",
+        "antibiotic_prophylaxis",
+        "diet",
+        "follow_up_imaging"
+      ],
+      "search_terms": [
+        "bariatric surgery",
+        "gastric bypass",
+        "sleeve gastrectomy",
+        "VTE prophylaxis"
+      ],
+      "mesh_terms_curated": ["Obesity"],
+      "negative_patterns": []
+    }
+  ]
+}

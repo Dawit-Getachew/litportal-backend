@@ -1,0 +1,263 @@
+{
+  "name": "cardiometabolic_lipids",
+  "specialty": "endocrinology",
+  "secondary_specialties": ["cardiology", "lipidology", "internal_medicine"],
+  "description": "Phase 5F — cardiometabolic + lipid specialty pack. Used by ClinicalOntologyMapperService and the picott role-repair service for GLP-1 / lipid / metabolic-biomarker questions (e.g., 'how do glp1s impact ldl cholesterole?').",
+  "concept_groups": {
+    "glp1_receptor_agonists": {
+      "class_name": "GLP-1 receptor agonists",
+      "concept_type": "drug_class",
+      "role_hint": "intervention",
+      "synonyms": [
+        "GLP-1 receptor agonist",
+        "GLP-1 receptor agonists",
+        "GLP-1RA",
+        "GLP-1 RAs",
+        "GLP1 receptor agonist",
+        "GLP1-RA",
+        "GLP-1 agonist",
+        "GLP-1 agonists",
+        "incretin mimetic",
+        "incretin mimetics",
+        "glucagon-like peptide-1 receptor agonist",
+        "glucagon-like peptide 1 receptor agonist"
+      ],
+      "members": [
+        {
+          "concept": "semaglutide",
+          "synonyms": ["Ozempic", "Wegovy", "Rybelsus"],
+          "mesh_descriptor": "Semaglutide",
+          "rxnorm_rxcui": "1991302",
+          "umls_cui": "C4082131",
+          "is_glp1_ra": true
+        },
+        {
+          "concept": "liraglutide",
+          "synonyms": ["Victoza", "Saxenda"],
+          "mesh_descriptor": "Liraglutide",
+          "rxnorm_rxcui": "475968",
+          "umls_cui": "C1456408",
+          "is_glp1_ra": true
+        },
+        {
+          "concept": "dulaglutide",
+          "synonyms": ["Trulicity"],
+          "mesh_descriptor": "Glucagon-Like Peptides",
+          "rxnorm_rxcui": "1551291",
+          "umls_cui": "C2937169",
+          "is_glp1_ra": true
+        },
+        {
+          "concept": "exenatide",
+          "synonyms": ["Byetta", "Bydureon", "exendin-4"],
+          "mesh_descriptor": "Exenatide",
+          "rxnorm_rxcui": "60548",
+          "umls_cui": "C0167117",
+          "is_glp1_ra": true
+        },
+        {
+          "concept": "lixisenatide",
+          "synonyms": ["Adlyxin", "Lyxumia"],
+          "mesh_descriptor": "Glucagon-Like Peptide 1",
+          "rxnorm_rxcui": "1440051",
+          "umls_cui": null,
+          "is_glp1_ra": true
+        },
+        {
+          "concept": "albiglutide",
+          "synonyms": ["Tanzeum"],
+          "mesh_descriptor": "Glucagon-Like Peptide 1",
+          "rxnorm_rxcui": "1534765",
+          "umls_cui": null,
+          "is_glp1_ra": true
+        }
+      ],
+      "mesh_class_descriptors": [
+        "Glucagon-Like Peptide-1 Receptor",
+        "Glucagon-Like Peptide 1",
+        "Glucagon-Like Peptides"
+      ],
+      "ontology_confidence": 0.95
+    },
+    "related_but_separate_classes": {
+      "description": "Classes that are CLOSE to GLP-1 RAs but are NOT GLP-1 RAs. Used for the 'related' / 'tirzepatide_only_for_glp1_question' cap.",
+      "concepts": [
+        {
+          "concept": "tirzepatide",
+          "concept_type": "drug",
+          "role_hint": "intervention",
+          "class_name": "dual GIP/GLP-1 receptor agonist",
+          "synonyms": ["Mounjaro", "Zepbound", "dual GIP and GLP-1 receptor agonist", "GIP/GLP-1 RA"],
+          "mesh_descriptor": "",
+          "rxnorm_rxcui": "2601723",
+          "umls_cui": null,
+          "is_glp1_ra": false,
+          "related_cap_reason": "tirzepatide_only_for_glp1_question"
+        },
+        {
+          "concept": "dipeptidyl peptidase-4 inhibitors",
+          "concept_type": "drug_class",
+          "role_hint": "intervention",
+          "synonyms": ["DPP-4 inhibitors", "DPP4 inhibitors", "gliptins", "sitagliptin", "saxagliptin", "linagliptin", "alogliptin", "vildagliptin"],
+          "mesh_descriptor": "Dipeptidyl-Peptidase IV Inhibitors",
+          "is_glp1_ra": false,
+          "related_cap_reason": "related_class_not_glp1_ra"
+        },
+        {
+          "concept": "amylin analog",
+          "concept_type": "drug_class",
+          "role_hint": "intervention",
+          "synonyms": ["pramlintide"],
+          "is_glp1_ra": false,
+          "related_cap_reason": "related_class_not_glp1_ra"
+        }
+      ]
+    },
+    "lipid_outcomes": {
+      "concept_type": "biomarker",
+      "role_hint": "outcome",
+      "concepts": [
+        {
+          "concept": "LDL-C",
+          "synonyms": [
+            "LDL",
+            "LDL cholesterol",
+            "LDL-cholesterol",
+            "low-density lipoprotein cholesterol",
+            "low density lipoprotein cholesterol",
+            "low-density lipoprotein",
+            "low density lipoprotein"
+          ],
+          "mesh_descriptor": "Cholesterol, LDL",
+          "umls_cui": "C0023823",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "HDL-C",
+          "synonyms": [
+            "HDL",
+            "HDL cholesterol",
+            "HDL-cholesterol",
+            "high-density lipoprotein cholesterol",
+            "high density lipoprotein cholesterol",
+            "high-density lipoprotein",
+            "high density lipoprotein"
+          ],
+          "mesh_descriptor": "Cholesterol, HDL",
+          "umls_cui": "C0023822",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "triglycerides",
+          "synonyms": ["TG", "triglyceride", "TGs"],
+          "mesh_descriptor": "Triglycerides",
+          "umls_cui": "C0041004",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "total cholesterol",
+          "synonyms": ["TC", "serum cholesterol", "cholesterol"],
+          "mesh_descriptor": "Cholesterol",
+          "umls_cui": "C0008377",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "apolipoprotein B",
+          "synonyms": ["ApoB", "Apo B", "apoB-100"],
+          "mesh_descriptor": "Apolipoproteins B",
+          "umls_cui": "C0003578",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "non-HDL cholesterol",
+          "synonyms": ["non-HDL-C", "non HDL cholesterol"],
+          "mesh_descriptor": "Cholesterol",
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "lipoprotein(a)",
+          "synonyms": ["Lp(a)", "LPA"],
+          "mesh_descriptor": "Lipoprotein(a)",
+          "umls_cui": "C0023820",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "dyslipidemia",
+          "synonyms": ["dyslipidaemia", "hyperlipidemia", "hypercholesterolemia"],
+          "mesh_descriptor": "Dyslipidemias",
+          "umls_cui": "C0242339",
+          "ontology_confidence": 0.95
+        }
+      ]
+    },
+    "metabolic_biomarkers": {
+      "concept_type": "biomarker",
+      "role_hint": "outcome",
+      "concepts": [
+        {
+          "concept": "hemoglobin A1c",
+          "synonyms": ["HbA1c", "A1c", "glycated hemoglobin", "glycosylated hemoglobin", "hemoglobin A1C"],
+          "mesh_descriptor": "Glycated Hemoglobin A",
+          "umls_cui": "C0019018",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "fasting plasma glucose",
+          "synonyms": ["FPG", "fasting blood glucose", "FBG", "fasting glucose"],
+          "mesh_descriptor": "Blood Glucose",
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "body weight",
+          "synonyms": ["weight loss", "weight", "BMI", "body mass index"],
+          "mesh_descriptor": "Body Weight",
+          "ontology_confidence": 0.95
+        }
+      ]
+    },
+    "populations": {
+      "concept_type": "disease",
+      "role_hint": "population",
+      "concepts": [
+        {
+          "concept": "type 2 diabetes",
+          "synonyms": ["T2D", "T2DM", "type 2 diabetes mellitus", "NIDDM", "non-insulin-dependent diabetes mellitus", "adult-onset diabetes"],
+          "mesh_descriptor": "Diabetes Mellitus, Type 2",
+          "umls_cui": "C0011860",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "obesity",
+          "synonyms": ["overweight", "obese", "BMI 30+"],
+          "mesh_descriptor": "Obesity",
+          "umls_cui": "C0028754",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "metabolic syndrome",
+          "synonyms": ["MetS", "syndrome X", "insulin resistance syndrome"],
+          "mesh_descriptor": "Metabolic Syndrome",
+          "umls_cui": "C0524620",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "atherosclerosis",
+          "synonyms": ["atherosclerotic cardiovascular disease", "ASCVD"],
+          "mesh_descriptor": "Atherosclerosis",
+          "umls_cui": "C0004153",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "cardiometabolic risk",
+          "synonyms": ["cardiometabolic", "cardiovascular risk factor"],
+          "ontology_confidence": 0.85
+        }
+      ]
+    }
+  },
+  "negative_context_patterns": [
+    "GLP-1 receptor signaling in cancer cells",
+    "rodent islet GLP-1 receptor expression",
+    "in vitro GLP-1 binding affinity"
+  ]
+}

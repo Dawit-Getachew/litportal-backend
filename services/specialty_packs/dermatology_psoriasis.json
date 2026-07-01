@@ -1,0 +1,189 @@
+{
+  "name": "dermatology_psoriasis",
+  "specialty": "dermatology",
+  "secondary_specialties": ["rheumatology", "internal_medicine"],
+  "description": "Phase 6F — dermatology / psoriasis specialty pack. Used by ClinicalOntologyMapperService + PrimaryClinicalEntityAnchorService for psoriasis treatment / management / guideline questions (e.g., 'What is the first line treatment and second line treatment for psoriasis?'). Closed-set, curated; no fabricated identifiers.",
+  "concept_groups": {
+    "psoriasis_disease": {
+      "concept_type": "disease",
+      "role_hint": "condition",
+      "question_type_hint": "therapy",
+      "question_subtype_hint": "treatment_sequencing",
+      "concepts": [
+        {
+          "concept": "psoriasis",
+          "synonyms": [
+            "plaque psoriasis",
+            "chronic plaque psoriasis",
+            "psoriasis vulgaris",
+            "psoriatic disease",
+            "moderate-to-severe psoriasis",
+            "moderate to severe psoriasis",
+            "severe psoriasis"
+          ],
+          "mesh_descriptor": "Psoriasis",
+          "umls_cui": "C0033860",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "plaque psoriasis",
+          "synonyms": ["chronic plaque psoriasis", "psoriasis vulgaris"],
+          "mesh_descriptor": "Psoriasis",
+          "umls_cui": "C0263361",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "moderate-to-severe psoriasis",
+          "synonyms": ["moderate to severe psoriasis", "severe psoriasis"],
+          "mesh_descriptor": "Psoriasis",
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "pediatric psoriasis",
+          "synonyms": ["childhood psoriasis", "psoriasis in children"],
+          "mesh_descriptor": "Psoriasis",
+          "ontology_confidence": 0.85
+        }
+      ]
+    },
+    "psoriasis_related_but_distinct": {
+      "description": "Related psoriatic conditions that must NOT dominate plain psoriasis treatment questions unless explicitly asked.",
+      "concept_type": "disease",
+      "role_hint": "condition",
+      "concepts": [
+        {
+          "concept": "psoriatic arthritis",
+          "synonyms": ["PsA", "arthritis psoriatica"],
+          "mesh_descriptor": "Arthritis, Psoriatic",
+          "umls_cui": "C0003872",
+          "related_cap_reason": "psoriatic_arthritis_not_plain_psoriasis",
+          "ontology_confidence": 0.95
+        }
+      ]
+    },
+    "psoriasis_topical_therapies": {
+      "concept_type": "drug_class",
+      "role_hint": "intervention",
+      "concepts": [
+        {
+          "concept": "topical corticosteroids",
+          "synonyms": ["topical steroids", "topical glucocorticoids"],
+          "mesh_descriptor": "Glucocorticoids",
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "vitamin D analogs",
+          "synonyms": ["calcipotriene", "calcipotriol", "calcitriol"],
+          "mesh_descriptor": "Calcitriol",
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "topical calcineurin inhibitors",
+          "synonyms": ["tacrolimus ointment", "pimecrolimus"],
+          "ontology_confidence": 0.85
+        }
+      ]
+    },
+    "psoriasis_phototherapy": {
+      "concept_type": "procedure",
+      "role_hint": "intervention",
+      "concepts": [
+        {
+          "concept": "phototherapy",
+          "synonyms": ["UVB phototherapy", "narrowband UVB", "NB-UVB", "UVA phototherapy", "PUVA"],
+          "mesh_descriptor": "Phototherapy",
+          "ontology_confidence": 0.90
+        }
+      ]
+    },
+    "psoriasis_systemic_therapies": {
+      "concept_type": "drug",
+      "role_hint": "intervention",
+      "concepts": [
+        {
+          "concept": "methotrexate",
+          "synonyms": ["MTX"],
+          "mesh_descriptor": "Methotrexate",
+          "umls_cui": "C0025677",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "cyclosporine",
+          "synonyms": ["cyclosporin", "ciclosporin"],
+          "mesh_descriptor": "Cyclosporine",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "acitretin",
+          "synonyms": ["Soriatane"],
+          "mesh_descriptor": "Acitretin",
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "apremilast",
+          "synonyms": ["Otezla", "PDE4 inhibitor"],
+          "mesh_descriptor": "Apremilast",
+          "ontology_confidence": 0.90
+        }
+      ]
+    },
+    "psoriasis_biologics": {
+      "class_name": "biologic therapy for psoriasis",
+      "concept_type": "drug_class",
+      "role_hint": "intervention",
+      "synonyms": [
+        "biologic agent",
+        "biologic agents",
+        "biologic therapy",
+        "biologic therapies",
+        "biologics"
+      ],
+      "members": [
+        {
+          "concept": "TNF inhibitor",
+          "synonyms": ["adalimumab", "Humira", "etanercept", "Enbrel", "infliximab", "Remicade", "certolizumab"],
+          "mesh_descriptor": "Tumor Necrosis Factor-alpha",
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "IL-17 inhibitor",
+          "synonyms": ["secukinumab", "Cosentyx", "ixekizumab", "Taltz", "brodalumab", "Siliq"],
+          "ontology_confidence": 0.92
+        },
+        {
+          "concept": "IL-23 inhibitor",
+          "synonyms": ["guselkumab", "Tremfya", "risankizumab", "Skyrizi", "tildrakizumab", "Ilumya"],
+          "ontology_confidence": 0.92
+        },
+        {
+          "concept": "IL-12/23 inhibitor",
+          "synonyms": ["ustekinumab", "Stelara"],
+          "ontology_confidence": 0.92
+        }
+      ],
+      "mesh_class_descriptors": ["Biological Products", "Interleukin-17", "Interleukin-23"],
+      "ontology_confidence": 0.92
+    },
+    "psoriasis_treatment_sequencing_terms": {
+      "concept_type": "other",
+      "role_hint": "other",
+      "question_type_hint": "therapy",
+      "question_subtype_hint": "treatment_sequencing",
+      "concepts": [
+        {"concept": "first-line treatment", "synonyms": ["first line treatment", "first-line therapy", "initial treatment"], "ontology_confidence": 0.95},
+        {"concept": "second-line treatment", "synonyms": ["second line treatment", "second-line therapy", "next treatment"], "ontology_confidence": 0.95},
+        {"concept": "treatment algorithm", "synonyms": ["management algorithm", "therapy algorithm"], "ontology_confidence": 0.90},
+        {"concept": "treatment guideline", "synonyms": ["clinical practice guideline", "consensus statement"], "ontology_confidence": 0.90}
+      ]
+    },
+    "psoriasis_guideline_bodies": {
+      "concept_type": "other",
+      "role_hint": "other",
+      "concepts": [
+        {"concept": "American Academy of Dermatology", "synonyms": ["AAD"], "ontology_confidence": 0.95},
+        {"concept": "National Psoriasis Foundation", "synonyms": ["NPF"], "ontology_confidence": 0.90},
+        {"concept": "European Dermatology Forum", "synonyms": ["EDF"], "ontology_confidence": 0.85}
+      ]
+    }
+  }
+}

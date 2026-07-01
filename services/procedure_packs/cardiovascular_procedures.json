@@ -1,0 +1,251 @@
+{
+  "name": "cardiovascular_procedures",
+  "specialty": ["cardiology", "cardiac surgery"],
+  "description": "Phase 6G.4P — cardiovascular procedures. Canonical concepts cover surgical aortic valve replacement (with mechanical / bioprosthetic device subgroups), TAVR/TAVI (related_but_distinct from SAVR), PCI (with DES), mitral valve repair / replacement, and CABG. MeSH descriptors are OMITTED unless the existing curated MeSH resolver verifies them (Atrial Fibrillation, Stroke, Apixaban, Warfarin, Myocardial Infarction, Heart Failure are verified — most procedure-specific descriptors are not).",
+  "entries": [
+    {
+      "canonical_concept": "aortic valve replacement",
+      "procedure_family": "cardiac_valve_surgery",
+      "specialty": ["cardiology", "cardiac surgery"],
+      "synonyms": [
+        "surgical aortic valve replacement",
+        "aortic valve surgery",
+        "aortic valve repair",
+        "open aortic valve replacement",
+        "isolated aortic valve replacement"
+      ],
+      "acronyms": ["AVR", "SAVR"],
+      "related_but_distinct": [
+        "transcatheter aortic valve replacement",
+        "TAVR",
+        "TAVI",
+        "transcatheter aortic valve implantation"
+      ],
+      "management_domains": [
+        "antithrombotic_therapy",
+        "anticoagulation",
+        "antiplatelet_therapy",
+        "endocarditis_prophylaxis",
+        "postoperative_atrial_fibrillation",
+        "bridging_anticoagulation"
+      ],
+      "search_terms": [
+        "aortic valve replacement",
+        "surgical aortic valve replacement",
+        "heart valve surgery",
+        "prosthetic heart valve",
+        "mechanical heart valve",
+        "bioprosthetic valve"
+      ],
+      "negative_patterns": [
+        "transcatheter only",
+        "TAVR only",
+        "TAVI only"
+      ]
+    },
+    {
+      "canonical_concept": "mechanical aortic valve",
+      "procedure_family": "cardiac_valve_surgery",
+      "specialty": ["cardiology", "cardiac surgery"],
+      "synonyms": [
+        "mechanical valve replacement",
+        "mechanical heart valve",
+        "prosthetic mechanical valve",
+        "On-X valve",
+        "St Jude mechanical valve"
+      ],
+      "acronyms": [],
+      "related_but_distinct": [
+        "bioprosthetic aortic valve",
+        "transcatheter aortic valve replacement"
+      ],
+      "management_domains": [
+        "anticoagulation",
+        "antithrombotic_therapy",
+        "bridging_anticoagulation"
+      ],
+      "search_terms": [
+        "mechanical heart valve",
+        "mechanical aortic valve",
+        "warfarin",
+        "vitamin K antagonist"
+      ],
+      "mesh_terms_curated": ["Warfarin"],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "bioprosthetic aortic valve",
+      "procedure_family": "cardiac_valve_surgery",
+      "specialty": ["cardiology", "cardiac surgery"],
+      "synonyms": [
+        "bioprosthetic valve replacement",
+        "tissue valve",
+        "biological aortic valve",
+        "porcine valve",
+        "bovine pericardial valve"
+      ],
+      "acronyms": [],
+      "related_but_distinct": [
+        "mechanical aortic valve",
+        "transcatheter aortic valve replacement"
+      ],
+      "management_domains": [
+        "antithrombotic_therapy",
+        "antiplatelet_therapy",
+        "anticoagulation"
+      ],
+      "search_terms": [
+        "bioprosthetic valve",
+        "tissue valve",
+        "aspirin",
+        "antiplatelet therapy"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "transcatheter aortic valve replacement",
+      "procedure_family": "cardiac_valve_surgery",
+      "specialty": ["cardiology", "interventional cardiology"],
+      "synonyms": [
+        "transcatheter aortic valve implantation",
+        "transcatheter valve intervention",
+        "percutaneous aortic valve replacement"
+      ],
+      "acronyms": ["TAVR", "TAVI"],
+      "related_but_distinct": [
+        "aortic valve replacement",
+        "surgical aortic valve replacement",
+        "SAVR"
+      ],
+      "management_domains": [
+        "antithrombotic_therapy",
+        "antiplatelet_therapy",
+        "anticoagulation",
+        "postoperative_atrial_fibrillation"
+      ],
+      "search_terms": [
+        "TAVR",
+        "TAVI",
+        "transcatheter aortic valve",
+        "transcatheter aortic valve replacement"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "mitral valve repair",
+      "procedure_family": "cardiac_valve_surgery",
+      "specialty": ["cardiology", "cardiac surgery"],
+      "synonyms": [
+        "surgical mitral valve repair",
+        "mitral annuloplasty",
+        "mitral valve reconstruction"
+      ],
+      "acronyms": ["MVr"],
+      "related_but_distinct": [
+        "mitral valve replacement",
+        "transcatheter mitral valve repair",
+        "MitraClip"
+      ],
+      "management_domains": [
+        "antithrombotic_therapy",
+        "anticoagulation",
+        "antiplatelet_therapy",
+        "postoperative_atrial_fibrillation"
+      ],
+      "search_terms": [
+        "mitral valve repair",
+        "mitral annuloplasty",
+        "mitral valve surgery"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "mitral valve replacement",
+      "procedure_family": "cardiac_valve_surgery",
+      "specialty": ["cardiology", "cardiac surgery"],
+      "synonyms": [
+        "surgical mitral valve replacement",
+        "mitral valve surgery"
+      ],
+      "acronyms": ["MVR"],
+      "related_but_distinct": [
+        "mitral valve repair",
+        "transcatheter mitral valve replacement"
+      ],
+      "management_domains": [
+        "anticoagulation",
+        "antithrombotic_therapy",
+        "bridging_anticoagulation",
+        "postoperative_atrial_fibrillation"
+      ],
+      "search_terms": [
+        "mitral valve replacement",
+        "mitral valve surgery",
+        "prosthetic mitral valve"
+      ],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "percutaneous coronary intervention",
+      "procedure_family": "coronary_intervention",
+      "specialty": ["cardiology", "interventional cardiology"],
+      "synonyms": [
+        "coronary angioplasty",
+        "coronary stent placement",
+        "drug-eluting stent placement",
+        "bare-metal stent placement",
+        "stent implantation"
+      ],
+      "acronyms": ["PCI", "DES", "BMS"],
+      "related_but_distinct": [
+        "coronary artery bypass grafting",
+        "CABG"
+      ],
+      "management_domains": [
+        "antiplatelet_therapy",
+        "dual_antiplatelet_therapy",
+        "antithrombotic_therapy",
+        "antibiotic_prophylaxis"
+      ],
+      "search_terms": [
+        "percutaneous coronary intervention",
+        "PCI",
+        "coronary stent",
+        "drug-eluting stent",
+        "dual antiplatelet therapy",
+        "DAPT"
+      ],
+      "mesh_terms_curated": ["Myocardial Infarction"],
+      "negative_patterns": []
+    },
+    {
+      "canonical_concept": "coronary artery bypass grafting",
+      "procedure_family": "coronary_artery_bypass",
+      "specialty": ["cardiology", "cardiac surgery"],
+      "synonyms": [
+        "coronary bypass surgery",
+        "bypass grafting",
+        "off-pump coronary bypass"
+      ],
+      "acronyms": ["CABG", "OPCAB"],
+      "related_but_distinct": [
+        "percutaneous coronary intervention",
+        "PCI"
+      ],
+      "management_domains": [
+        "antiplatelet_therapy",
+        "antithrombotic_therapy",
+        "anticoagulation",
+        "postoperative_atrial_fibrillation",
+        "vte_prophylaxis"
+      ],
+      "search_terms": [
+        "coronary artery bypass",
+        "CABG",
+        "bypass grafting",
+        "coronary bypass surgery"
+      ],
+      "negative_patterns": []
+    }
+  ]
+}

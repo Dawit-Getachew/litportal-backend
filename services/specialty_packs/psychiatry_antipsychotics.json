@@ -1,0 +1,82 @@
+{
+  "name": "psychiatry_antipsychotics",
+  "specialty": "psychiatry",
+  "secondary_specialties": ["pharmacology", "neurology"],
+  "description": "Phase 6F — psychiatry / atypical antipsychotic specialty pack. Used by ClinicalOntologyMapperService + PrimaryClinicalEntityAnchorService for drug-safety, side-effect, and pharmacology questions about quetiapine / Seroquel and related agents (e.g., 'What are the side effects of Seroquel?'). Closed-set, curated; NO fabricated identifiers.",
+  "concept_groups": {
+    "quetiapine_drug": {
+      "class_name": "quetiapine",
+      "concept_type": "drug",
+      "role_hint": "intervention",
+      "question_type_hint": "pharmacology",
+      "question_subtype_hint": "drug_safety",
+      "synonyms": [
+        "quetiapine",
+        "quetiapine fumarate",
+        "Seroquel",
+        "Seroquel XR",
+        "ICI-204636"
+      ],
+      "mesh_class_descriptors": ["Quetiapine Fumarate"],
+      "ontology_confidence": 0.99,
+      "members": [
+        {
+          "concept": "quetiapine",
+          "synonyms": ["Seroquel", "Seroquel XR", "quetiapine fumarate"],
+          "mesh_descriptor": "Quetiapine Fumarate",
+          "rxnorm_rxcui": "51272",
+          "umls_cui": "C0123091",
+          "ontology_confidence": 0.99
+        }
+      ]
+    },
+    "atypical_antipsychotics_class": {
+      "class_name": "atypical antipsychotics",
+      "concept_type": "drug_class",
+      "role_hint": "intervention",
+      "question_type_hint": "pharmacology",
+      "question_subtype_hint": "drug_safety",
+      "synonyms": [
+        "atypical antipsychotic",
+        "atypical antipsychotics",
+        "second-generation antipsychotic",
+        "second-generation antipsychotics",
+        "SGA",
+        "SGAs"
+      ],
+      "mesh_class_descriptors": ["Antipsychotic Agents"],
+      "ontology_confidence": 0.95,
+      "members": [
+        {"concept": "olanzapine", "synonyms": ["Zyprexa"], "mesh_descriptor": "Olanzapine", "ontology_confidence": 0.95},
+        {"concept": "risperidone", "synonyms": ["Risperdal"], "mesh_descriptor": "Risperidone", "ontology_confidence": 0.95},
+        {"concept": "aripiprazole", "synonyms": ["Abilify"], "mesh_descriptor": "Aripiprazole", "ontology_confidence": 0.95},
+        {"concept": "ziprasidone", "synonyms": ["Geodon"], "mesh_descriptor": "Ziprasidone", "ontology_confidence": 0.90},
+        {"concept": "clozapine", "synonyms": ["Clozaril"], "mesh_descriptor": "Clozapine", "ontology_confidence": 0.95},
+        {"concept": "lurasidone", "synonyms": ["Latuda"], "ontology_confidence": 0.90}
+      ]
+    },
+    "adverse_effect_concepts": {
+      "concept_type": "outcome",
+      "role_hint": "outcome",
+      "question_type_hint": "pharmacology",
+      "question_subtype_hint": "drug_safety",
+      "concepts": [
+        {"concept": "side effects", "synonyms": ["adverse effects", "adverse reactions", "adverse events", "treatment-emergent adverse events", "TEAEs"], "mesh_descriptor": "Drug-Related Side Effects and Adverse Reactions", "ontology_confidence": 0.99},
+        {"concept": "tolerability", "synonyms": ["drug tolerability"], "ontology_confidence": 0.95},
+        {"concept": "toxicity", "synonyms": ["drug toxicity"], "mesh_descriptor": "Drug Toxicity", "ontology_confidence": 0.90},
+        {"concept": "drug safety", "synonyms": ["safety profile", "medication safety"], "ontology_confidence": 0.95}
+      ]
+    },
+    "quetiapine_specific_adverse_effects": {
+      "concept_type": "outcome",
+      "role_hint": "outcome",
+      "concepts": [
+        {"concept": "metabolic effects", "synonyms": ["metabolic adverse effects", "weight gain", "hyperglycemia", "dyslipidemia", "metabolic syndrome"], "ontology_confidence": 0.95},
+        {"concept": "somnolence", "synonyms": ["sedation", "drowsiness"], "mesh_descriptor": "Sleep Stages", "ontology_confidence": 0.95},
+        {"concept": "orthostatic hypotension", "synonyms": ["postural hypotension", "dizziness"], "mesh_descriptor": "Hypotension, Orthostatic", "ontology_confidence": 0.95},
+        {"concept": "extrapyramidal symptoms", "synonyms": ["EPS", "akathisia", "tardive dyskinesia"], "mesh_descriptor": "Basal Ganglia Diseases", "ontology_confidence": 0.95},
+        {"concept": "QT prolongation", "synonyms": ["QTc prolongation", "long QT"], "mesh_descriptor": "Long QT Syndrome", "ontology_confidence": 0.90}
+      ]
+    }
+  }
+}

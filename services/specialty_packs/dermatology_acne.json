@@ -1,0 +1,102 @@
+{
+  "name": "dermatology_acne",
+  "specialty": "dermatology",
+  "secondary_specialties": ["internal_medicine"],
+  "description": "Phase 6G.1 — dermatology / acne specialty pack. Extends the dermatology coverage to support background-definition questions like 'What is acne vulgaris?' Closed-set, curated; no fabricated identifiers. Related-but-distinct conditions (rosacea, chloracne) are NEVER collapsed into acne vulgaris and must be capped during ranking.",
+  "concept_groups": {
+    "acne_disease": {
+      "concept_type": "disease",
+      "role_hint": "condition",
+      "question_type_hint": "background",
+      "question_subtype_hint": "disease_overview",
+      "concepts": [
+        {
+          "concept": "acne vulgaris",
+          "synonyms": [
+            "acne",
+            "common acne",
+            "inflammatory acne",
+            "comedonal acne",
+            "nodulocystic acne"
+          ],
+          "mesh_descriptor": "Acne Vulgaris",
+          "umls_cui": "C0702166",
+          "ontology_confidence": 0.99
+        },
+        {
+          "concept": "acne",
+          "synonyms": ["acne vulgaris", "common acne"],
+          "mesh_descriptor": "Acne Vulgaris",
+          "umls_cui": "C0702166",
+          "ontology_confidence": 0.95
+        },
+        {
+          "concept": "inflammatory acne",
+          "synonyms": ["inflammatory acne vulgaris", "nodulocystic acne"],
+          "mesh_descriptor": "Acne Vulgaris",
+          "ontology_confidence": 0.90
+        },
+        {
+          "concept": "comedonal acne",
+          "synonyms": ["non-inflammatory acne", "comedones"],
+          "mesh_descriptor": "Acne Vulgaris",
+          "ontology_confidence": 0.88
+        },
+        {
+          "concept": "nodulocystic acne",
+          "synonyms": ["severe nodulocystic acne", "cystic acne"],
+          "mesh_descriptor": "Acne Vulgaris",
+          "ontology_confidence": 0.88
+        }
+      ]
+    },
+    "acne_related_but_distinct": {
+      "description": "Related dermatologic conditions that must NOT collapse to acne vulgaris and must be ranking-capped when an article ONLY covers them.",
+      "concept_type": "disease",
+      "role_hint": "condition",
+      "concepts": [
+        {
+          "concept": "rosacea",
+          "synonyms": ["acne rosacea"],
+          "mesh_descriptor": "Rosacea",
+          "umls_cui": "C0035854",
+          "ontology_confidence": 0.95,
+          "related_but_distinct_from": "acne vulgaris",
+          "related_but_distinct_cap": 50
+        },
+        {
+          "concept": "chloracne",
+          "synonyms": [],
+          "mesh_descriptor": "Acneiform Eruptions",
+          "ontology_confidence": 0.92,
+          "related_but_distinct_from": "acne vulgaris",
+          "related_but_distinct_cap": 50
+        },
+        {
+          "concept": "hidradenitis suppurativa",
+          "synonyms": ["acne inversa"],
+          "mesh_descriptor": "Hidradenitis Suppurativa",
+          "ontology_confidence": 0.92,
+          "related_but_distinct_from": "acne vulgaris",
+          "related_but_distinct_cap": 50
+        }
+      ]
+    },
+    "acne_overview_terms": {
+      "description": "Background / overview tag terms used for query compilation. NEVER usable as a sole clinical anchor.",
+      "concept_type": "other",
+      "role_hint": "other",
+      "question_type_hint": "background",
+      "question_subtype_hint": "disease_overview",
+      "concepts": [
+        {"concept": "pathogenesis", "synonyms": [], "ontology_confidence": 0.85},
+        {"concept": "epidemiology", "synonyms": [], "ontology_confidence": 0.85},
+        {"concept": "classification", "synonyms": [], "ontology_confidence": 0.85},
+        {"concept": "diagnosis", "synonyms": [], "ontology_confidence": 0.85},
+        {"concept": "treatment overview", "synonyms": ["therapy overview", "management overview"], "ontology_confidence": 0.85},
+        {"concept": "review", "synonyms": ["narrative review", "systematic review"], "ontology_confidence": 0.80},
+        {"concept": "guideline", "synonyms": ["clinical practice guideline", "consensus statement"], "ontology_confidence": 0.85}
+      ]
+    }
+  }
+}

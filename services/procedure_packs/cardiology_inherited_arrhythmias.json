@@ -1,0 +1,141 @@
+{
+  "name": "cardiology_inherited_arrhythmias",
+  "specialty": ["cardiology", "electrophysiology", "anesthesia", "perioperative medicine"],
+  "description": "Phase H2-tail Task C — inherited cardiac arrhythmia syndromes (Brugada, long QT, CPVT). Lifts perioperative-management queries on Brugada and adjacent channelopathies onto the deterministic ProcedureOntologyMapper path. NOT a procedure pack — these are CONDITIONS — but they are reused via the procedure_packs loader because the deterministic anchor layer keys off canonical_concept and the perioperative-medication-management subdomain. Lymphoma / myeloma / long QT / CPVT / short QT / ARVC are kept under related_but_distinct so the ranker can L5-cap wrong-condition perioperative articles. Closed-set vocab only.",
+  "entries": [
+    {
+      "canonical_concept": "Brugada syndrome",
+      "procedure_family": "cardiac_arrhythmia_intervention",
+      "specialty": ["cardiology", "electrophysiology", "anesthesia"],
+      "synonyms": [
+        "Brugada pattern",
+        "Brugada-type ECG pattern",
+        "type 1 Brugada pattern",
+        "type 2 Brugada pattern",
+        "type 3 Brugada pattern",
+        "SCN5A-related Brugada syndrome",
+        "sodium channelopathy",
+        "Brugada channelopathy",
+        "inherited arrhythmia syndrome"
+      ],
+      "acronyms": ["BrS"],
+      "related_but_distinct": [
+        "long QT syndrome",
+        "LQTS",
+        "catecholaminergic polymorphic ventricular tachycardia",
+        "CPVT",
+        "short QT syndrome",
+        "SQTS",
+        "Andersen-Tawil syndrome",
+        "arrhythmogenic right ventricular cardiomyopathy",
+        "ARVC",
+        "early repolarization syndrome",
+        "idiopathic ventricular fibrillation"
+      ],
+      "management_domains": [
+        "perioperative_medication_management",
+        "surveillance"
+      ],
+      "search_terms": [
+        "Brugada syndrome",
+        "Brugada pattern",
+        "perioperative management",
+        "perioperative care",
+        "anesthesia",
+        "anesthetic management",
+        "drug avoidance",
+        "sodium channel blocker avoidance",
+        "fever management",
+        "ventricular arrhythmia",
+        "sudden cardiac death"
+      ],
+      "negative_patterns": [
+        "long QT only",
+        "LQTS only",
+        "CPVT only",
+        "acquired Brugada only"
+      ]
+    },
+    {
+      "canonical_concept": "long QT syndrome",
+      "procedure_family": "cardiac_arrhythmia_intervention",
+      "specialty": ["cardiology", "electrophysiology", "anesthesia"],
+      "synonyms": [
+        "congenital long QT syndrome",
+        "inherited long QT",
+        "Romano-Ward syndrome",
+        "Jervell and Lange-Nielsen syndrome",
+        "LQT1",
+        "LQT2",
+        "LQT3"
+      ],
+      "acronyms": ["LQTS"],
+      "related_but_distinct": [
+        "Brugada syndrome",
+        "BrS",
+        "catecholaminergic polymorphic ventricular tachycardia",
+        "CPVT",
+        "short QT syndrome",
+        "acquired long QT",
+        "drug-induced QT prolongation"
+      ],
+      "management_domains": [
+        "perioperative_medication_management",
+        "surveillance"
+      ],
+      "search_terms": [
+        "long QT syndrome",
+        "congenital long QT",
+        "perioperative management",
+        "anesthesia",
+        "QT prolongation",
+        "drug avoidance",
+        "QT-prolonging drug avoidance",
+        "torsades de pointes",
+        "beta blocker"
+      ],
+      "negative_patterns": [
+        "Brugada only",
+        "CPVT only",
+        "acquired only"
+      ]
+    },
+    {
+      "canonical_concept": "catecholaminergic polymorphic ventricular tachycardia",
+      "procedure_family": "cardiac_arrhythmia_intervention",
+      "specialty": ["cardiology", "electrophysiology", "anesthesia"],
+      "synonyms": [
+        "CPVT",
+        "RYR2-related CPVT",
+        "exercise-induced polymorphic VT",
+        "exercise-induced polymorphic ventricular tachycardia"
+      ],
+      "acronyms": ["CPVT"],
+      "related_but_distinct": [
+        "Brugada syndrome",
+        "long QT syndrome",
+        "LQTS",
+        "Andersen-Tawil syndrome",
+        "short QT syndrome"
+      ],
+      "management_domains": [
+        "perioperative_medication_management",
+        "surveillance"
+      ],
+      "search_terms": [
+        "catecholaminergic polymorphic ventricular tachycardia",
+        "CPVT",
+        "RYR2",
+        "perioperative management",
+        "anesthesia",
+        "beta blocker",
+        "flecainide",
+        "exercise restriction"
+      ],
+      "negative_patterns": [
+        "long QT only",
+        "Brugada only"
+      ]
+    }
+  ]
+}
