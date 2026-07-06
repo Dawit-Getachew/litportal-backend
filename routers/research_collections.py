@@ -82,6 +82,14 @@ async def get_default_collection(current_user: dict = Depends(get_current_user))
     return await research_collection_service.get_or_create_default(current_user["id"])
 
 
+@router.get("/tree")
+async def collections_tree(current_user: dict = Depends(get_current_user)):
+    """Option A — full LitPortal collection hierarchy + each collection's papers'
+    canonical ids (pmid/doi/paper_id) in one call, so LitArchive can render the
+    'LitPortal Saved' sub-folders and match them to central LitHub papers."""
+    return await research_collection_service.tree(current_user["id"])
+
+
 @router.get("/{collection_id}")
 async def get_collection(collection_id: str, current_user: dict = Depends(get_current_user)):
     return await _run(research_collection_service.get(current_user["id"], collection_id))

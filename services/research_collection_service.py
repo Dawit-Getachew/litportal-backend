@@ -107,6 +107,55 @@ class ResearchCollectionService:
             )
         return cols
 
+    async def tree(self, user_id: str) -> dict[str, Any]:
+        """Full collection hierarchy + each collection's papers' canonical ids,
+        in ONE call. Consumed cross-app (LitArchive / LitPulse) to render the
+        LitPortal sub-folders and match papers to central LitHub by
+        pmid / doi / paper_id. 3 queries total (no N+1)."""
+        db = get_db()
+        cols = await db[Collections.RESEARCH_COLLECTIONS].find(
+            {"user_id": user_id}, {"_id": 0},
+        ).sort([("parent_id", 1), ("position", 1), ("created_at", 1)]).to_list(length=1000)
+        col_ids = [c["id"] for c in cols]
+        items_by_col: dict[str, list[dict]] = {}
+        article_ids: set[str] = set()
+        if col_ids:
+            async for it in db[Collections.RESEARCH_COLLECTION_ITEMS].find(
+                {"collection_id": {"$in": col_ids}},
+                {"_id": 0, "collection_id": 1, "article_id": 1, "paper_id": 1, "title": 1},
+            ):
+                items_by_col.setdefault(it["collection_id"], []).append(it)
+                if it.get("article_id"):
+                    article_ids.add(it["article_id"])
+        art_map: dict[str, dict] = {}
+        if article_ids:
+            async for a in db[Collections.ARTICLES].find(
+                {"id": {"$in": list(article_ids)}},
+                {"_id": 0, "id": 1, "pmid": 1, "doi": 1, "doi_normalized": 1,
+                 "canonical_key": 1, "title": 1},
+            ):
+                art_map[a["id"]] = a
+        out: list[dict[str, Any]] = []
+        for c in cols:
+            papers: list[dict[str, Any]] = []
+            for it in items_by_col.get(c["id"], []):
+                a = art_map.get(it.get("article_id")) or {}
+                papers.append({
+                    "article_id": it.get("article_id"),
+                    "paper_id": it.get("paper_id"),  # central LitHub paper id (when mirrored)
+                    "pmid": a.get("pmid"),
+                    "doi": a.get("doi") or a.get("doi_normalized"),
+                    "canonical_key": a.get("canonical_key"),
+                    "title": it.get("title") or a.get("title"),
+                })
+            out.append({
+                "id": c["id"], "name": c["name"], "parent_id": c.get("parent_id"),
+                "position": c.get("position", 0), "icon": c.get("icon"),
+                "color": c.get("color"), "item_count": len(papers),
+                "papers": papers,
+            })
+        return {"collections": out}
+
     async def _owned_collection(self, user_id: str, collection_id: str) -> dict[str, Any]:
         db = get_db()
         col = await db[Collections.RESEARCH_COLLECTIONS].find_one(
@@ -361,6 +410,10 @@ class ResearchCollectionService:
                 "year": art.get("publication_year"),
                 "authors": [a for a in authors if a],
                 "source": "litportal-collection",
+                # Durable LitPortal-origin marker (LitHub keeps this fill-when-empty
+                # on re-save, unlike `source` which is overwritten) so LitPulse can
+                # reliably group these under "LitPortal Saved". See FE_OPTION_A spec.
+                "portal_engine_record_id": f"litportal:{article_id}",
             }
             try:
                 from clients.lithub_client import LitHubClient

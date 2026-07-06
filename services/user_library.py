@@ -498,6 +498,10 @@ class UserLibraryService:
             "year": art.get("publication_year"),
             "authors": authors,
             "source": "litportal-library",
+            # Durable LitPortal-origin marker (LitHub keeps this fill-when-empty on
+            # re-save, unlike `source`) so LitPulse can reliably group these under
+            # "LitPortal Saved" even after a cross-app re-save.
+            "portal_engine_record_id": f"litportal:{article_id}",
         }
 
     async def _maybe_mirror_save(self, user_id: str, article_id: str) -> None:
