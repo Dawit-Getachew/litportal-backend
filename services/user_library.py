@@ -253,6 +253,24 @@ class UserLibraryService:
             if art:
                 return art
 
+        # 1b) The integrated frontend sends the search_session_articles ROW id
+        # (the article-card "id" from GET /search-sessions/{id}, a 32-char hex),
+        # NOT the article's own id. Map it to the underlying article. Scope to
+        # the session when the caller provides saved_from_search_session_id.
+        if raw:
+            ssa_q: dict[str, Any] = {"id": raw}
+            if body.saved_from_search_session_id:
+                ssa_q["search_session_id"] = body.saved_from_search_session_id
+            ssa = await db[Collections.SEARCH_SESSION_ARTICLES].find_one(
+                ssa_q, {"_id": 0, "article_id": 1},
+            )
+            if ssa and ssa.get("article_id"):
+                art = await db[Collections.ARTICLES].find_one(
+                    {"id": ssa["article_id"]}, self._SAVE_PROJ,
+                )
+                if art:
+                    return art
+
         # Collect identifiers from the id string + optional body fields.
         paper_id: Optional[str] = None
         if raw.startswith("lithub:"):

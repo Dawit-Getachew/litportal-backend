@@ -162,3 +162,64 @@ async def test_save_unresolvable_id_still_404(client, auth):
         "article_id": "totally-bogus-" + uuid.uuid4().hex}, headers=auth)
     assert r.status_code == 404
     assert r.json()["detail"] == "article_not_found"
+
+
+# ---- the exact HAR-observed bug: FE sends the search_session_articles ROW id ----
+async def _seed_session_with_article(db, uid):
+    """Seed a session + article + SSA row (32-hex row id, like production)."""
+    sid = "fx-s-" + uuid.uuid4().hex[:8]
+    aid = await _seed_article(db, pmid=str(uuid.uuid4().int)[:8])
+    row_id = uuid.uuid4().hex  # 32-hex, no dashes — matches production SSA ids
+    now = datetime.now(timezone.utc)
+    await db[Collections.SEARCH_SESSIONS].insert_one({
+        "id": sid, "user_id": uid, "status": "awaiting_selection",
+        "original_question": "q", "sanitized_question": "q",
+        "deleted_at": None, "created_at": now, "updated_at": now,
+    })
+    await db[Collections.SEARCH_SESSION_ARTICLES].insert_one({
+        "id": row_id, "search_session_id": sid, "article_id": aid,
+        "user_included": True, "included_by_default": True, "exclusion_reason": None,
+        "overall_rank": 90, "created_at": now, "updated_at": now,
+    })
+    return sid, row_id, aid
+
+
+async def test_save_by_session_article_row_id(client, auth):
+    """The FE sends the card's ROW id (search_session_articles.id) as article_id."""
+    db = get_db()
+    uid = await _me_id(client, auth)
+    sid, row_id, aid = await _seed_session_with_article(db, uid)
+    r = await client.post("/api/library/items", json={
+        "article_id": row_id, "saved_from_search_session_id": sid}, headers=auth)
+    assert r.status_code == 201, r.text
+    assert r.json()["library_item"]["article_id"] == aid  # mapped row -> article
+
+
+async def test_enrichment_endpoint_by_row_id(client, auth):
+    db = get_db()
+    uid = await _me_id(client, auth)
+    sid, row_id, aid = await _seed_session_with_article(db, uid)
+    r = await client.get(f"/api/enrichment/{sid}/{row_id}", headers=auth)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == row_id
+    assert set(body.keys()) == {"id", "tldr", "citation_count", "oa_status", "pdf_url"}
+    assert body["oa_status"] in ("open", "closed", "unknown")
+
+
+async def test_enrichment_unknown_record_is_benign_200(client, auth):
+    """Unknown record must NOT 404 (that was the burst) — benign 200."""
+    r = await client.get(
+        f"/api/enrichment/{uuid.uuid4()}/{uuid.uuid4().hex}", headers=auth)
+    assert r.status_code == 200
+    assert r.json()["oa_status"] == "unknown"
+
+
+async def test_enrichment_works_without_auth(client):
+    """The frontend calls /enrichment with NO Authorization header — must work."""
+    db = get_db()
+    # seed under any user id (endpoint is unauthenticated)
+    sid, row_id, aid = await _seed_session_with_article(db, "anon-" + uuid.uuid4().hex[:6])
+    r = await client.get(f"/api/enrichment/{sid}/{row_id}")  # no headers
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == row_id
