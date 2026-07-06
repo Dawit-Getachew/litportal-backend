@@ -45,6 +45,13 @@ class UserLibraryItemDoc(BaseModel):
 
 
 class LibraryItemCreate(BaseModel):
+    # ``article_id`` is normally a local litportal ``articles.id``. To make save
+    # robust for the integrated LitPulse/LitHub frontend, it may ALSO be a central
+    # LitHub paper id ("lithub:<paper_id>" or a bare paper id) or an identifier;
+    # the backend resolves/imports it. The optional identifier + metadata fields
+    # below let the frontend pass what it already has so the article can be
+    # find-or-created when it isn't a local article yet. All optional →
+    # fully backward compatible.
     article_id: str
     note: Optional[str] = Field(default=None, max_length=4000)
     tags: list[str] = Field(default_factory=list, max_length=20)
@@ -53,6 +60,15 @@ class LibraryItemCreate(BaseModel):
     saved_from_rank: Optional[int] = None
     saved_from_question_type: Optional[str] = None
     saved_from_specialty: Optional[str] = None
+    # Optional resolution hints (used only when article_id is not a local article).
+    paper_id: Optional[str] = None            # central LitHub paper id
+    pmid: Optional[str] = None
+    doi: Optional[str] = None
+    pmcid: Optional[str] = None
+    title: Optional[str] = Field(default=None, max_length=1024)
+    journal: Optional[str] = Field(default=None, max_length=512)
+    publication_year: Optional[int] = None
+    authors: Optional[list[str]] = None
 
     @field_validator("tags")
     @classmethod

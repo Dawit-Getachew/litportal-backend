@@ -297,30 +297,39 @@ class FullTextAccessBrokerService:
             client = httpx.AsyncClient(timeout=self.timeout_s)
         # Reset per-run circuit breakers.
         self._ss_circuit_open = False
-        ss_lookups = 0
         articles_processed = 0
         new_rows_total = 0
-        try:
-            for art in articles:
-                rows = await self._broker_one_article(
-                    client, art, stats, ss_budget_left=(self.ss_max_lookups - ss_lookups),
-                    session_id=session_id,
+        # perf — broker every article CONCURRENTLY (bounded). Each article's rows
+        # are independent (per-article access_locations), so this is safe and
+        # cuts the ``brokering_access`` phase from N serial round-trips to ~N/conc.
+        # Semantic-Scholar budget is assigned by INDEX (first ss_max_lookups
+        # articles get 1 lookup each) so the total SS-call cap holds without a
+        # shared running counter.
+        import uuid
+        max_conc = max(1, int(os.environ.get("ACCESS_BROKER_MAX_CONCURRENCY", "8")))
+        sem = asyncio.Semaphore(max_conc)
+
+        async def _broker(idx: int, art: dict[str, Any]) -> list[dict[str, Any]]:
+            ss_budget = 1 if idx < self.ss_max_lookups else 0
+            async with sem:
+                return await self._broker_one_article(
+                    client, art, stats, ss_budget_left=ss_budget, session_id=session_id,
                 )
-                # Count S2 lookups by inspecting source markers (best effort).
-                for row in rows:
-                    if row.get("source") == "semantic_scholar" and row.get("access_category") != "semantic_scholar_institutional_linkout":
-                        ss_lookups += 1
-                        break
+
+        try:
+            per_article = await asyncio.gather(
+                *(_broker(i, a) for i, a in enumerate(articles))
+            )
+            to_insert: list[dict[str, Any]] = []
+            for rows in per_article:
                 articles_processed += 1
-                # Persist this article's rows incrementally so partial progress
-                # is visible even if the run is long.
-                if rows:
-                    import uuid
-                    for r in rows:
-                        if not r.get("id"):
-                            r["id"] = uuid.uuid4().hex
-                    await db[Collections.ARTICLE_ACCESS_LOCATIONS].insert_many(rows)
-                    new_rows_total += len(rows)
+                for r in (rows or []):
+                    if not r.get("id"):
+                        r["id"] = uuid.uuid4().hex
+                    to_insert.append(r)
+            if to_insert:
+                await db[Collections.ARTICLE_ACCESS_LOCATIONS].insert_many(to_insert)
+                new_rows_total = len(to_insert)
         finally:
             if owns_client:
                 await client.aclose()

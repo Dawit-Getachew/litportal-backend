@@ -139,14 +139,19 @@ class UserLibraryService:
         article was already active in the library — idempotent re-save).
         """
         db = get_db()
-        art = await db[Collections.ARTICLES].find_one(
-            {"id": body.article_id}, {"_id": 0, "id": 1, "canonical_key": 1},
-        )
+        # Resolve the article: a local id (fast path), a central LitHub paper id
+        # ("lithub:<id>" / bare), or a PMID/DOI/PMCID — importing/creating it when
+        # it is not already a local article. This fixes the integrated frontend's
+        # "article_not_found" when saving a paper that lives in LitHub/LitPulse
+        # rather than in litportal's local article store.
+        art = await self._resolve_article_for_save(body)
         if not art:
             raise LibraryError("article_not_found", status=404)
+        article_id = art["id"]
+        canonical_key = art.get("canonical_key") or ""
         existing = await db[Collections.USER_LIBRARY_ITEMS].find_one(
             {
-                "user_id": user_id, "article_id": body.article_id,
+                "user_id": user_id, "article_id": article_id,
                 "status": "active",
             },
             {"_id": 0},
@@ -175,16 +180,16 @@ class UserLibraryService:
                 user_id=user_id,
                 payload={
                     "library_item_id": existing["id"],
-                    "article_id": body.article_id,
+                    "article_id": article_id,
                     "was_duplicate": True,
                 },
             )
-            await self._maybe_mirror_save(user_id, body.article_id)
+            await self._maybe_mirror_save(user_id, article_id)
             return fresh, False
         doc = UserLibraryItemDoc(
             user_id=user_id,
-            article_id=body.article_id,
-            canonical_key=art.get("canonical_key") or "",
+            article_id=article_id,
+            canonical_key=canonical_key,
             note=body.note,
             tags=body.tags,
             is_favorite=body.is_favorite,
@@ -214,15 +219,164 @@ class UserLibraryService:
                 search_session_id=body.saved_from_search_session_id,
                 payload={
                     "event_type": "library_item_saved",
-                    "article_id": body.article_id,
+                    "article_id": article_id,
                     "rank_at_save": body.saved_from_rank,
                     "selected_at_save": True,
                     "question_type": body.saved_from_question_type,
                     "specialty": body.saved_from_specialty,
                 },
             )
-        await self._maybe_mirror_save(user_id, body.article_id)
+        await self._maybe_mirror_save(user_id, article_id)
         return {k: v for k, v in doc.items() if k != "_id"}, True
+
+    # ------------------------------------------------------------------
+    # Article resolution for save (local id / LitHub paper id / identifier)
+    # ------------------------------------------------------------------
+    _SAVE_PROJ = {"_id": 0, "id": 1, "canonical_key": 1}
+
+    async def _resolve_article_for_save(
+        self, body: LibraryItemCreate,
+    ) -> Optional[dict[str, Any]]:
+        """Resolve ``body.article_id`` (+ optional identifiers/metadata) to a
+        local ``articles`` row, importing/creating it when necessary.
+
+        Order: (1) exact local id → (2) PMID/DOI/PMCID/canonical_key lookup →
+        (3) import from central LitHub by paper id → (4) find-or-create from any
+        provided metadata. Returns ``{id, canonical_key}`` or None.
+        """
+        db = get_db()
+        raw = (body.article_id or "").strip()
+
+        # 1) Exact local article id — the common, fast path (unchanged behavior).
+        if raw:
+            art = await db[Collections.ARTICLES].find_one({"id": raw}, self._SAVE_PROJ)
+            if art:
+                return art
+
+        # Collect identifiers from the id string + optional body fields.
+        paper_id: Optional[str] = None
+        if raw.startswith("lithub:"):
+            paper_id = raw.split(":", 1)[1].strip() or None
+        if body.paper_id:
+            paper_id = str(body.paper_id).strip() or paper_id
+
+        pmid = self._norm_pmid(body.pmid)
+        if not pmid and raw.isdigit() and 4 <= len(raw) <= 9:
+            pmid = raw
+        doi_norm = normalize_doi(body.doi or "") or None
+        if not doi_norm and raw.lower().startswith("10."):
+            doi_norm = normalize_doi(raw) or None
+        pmcid: Optional[str] = None
+        _raw_pmcid = (body.pmcid or "").strip().upper()
+        if _raw_pmcid:
+            pmcid = _raw_pmcid if _raw_pmcid.startswith("PMC") else f"PMC{_raw_pmcid}"
+        elif raw.upper().startswith("PMC"):
+            pmcid = raw.upper()
+
+        # 2) Identifier lookup against existing local articles.
+        or_q: list[dict[str, Any]] = []
+        if pmid:
+            or_q.append({"pmid": pmid})
+        if doi_norm:
+            or_q.append({"doi_normalized": doi_norm})
+        if pmcid:
+            or_q.append({"pmcid": pmcid})
+        if raw:
+            or_q.append({"canonical_key": raw})
+        if or_q:
+            art = await db[Collections.ARTICLES].find_one({"$or": or_q}, self._SAVE_PROJ)
+            if art:
+                return art
+
+        # 3) Import from the central LitHub library by paper id.
+        if paper_id:
+            imported = await self._import_article_from_lithub(paper_id)
+            if imported:
+                return imported
+
+        # 4) Find-or-create from whatever identifiers/metadata we have.
+        if pmid or doi_norm or pmcid or body.title:
+            created = await self._create_local_article(
+                pmid=pmid, doi=body.doi, doi_norm=doi_norm, pmcid=pmcid,
+                title=body.title, journal=body.journal,
+                year=body.publication_year, authors=body.authors,
+            )
+            if created:
+                return created
+        return None
+
+    async def _import_article_from_lithub(
+        self, paper_id: str,
+    ) -> Optional[dict[str, Any]]:
+        """Fetch a paper's metadata from central LitHub and find-or-create a
+        local article. Best-effort; None on any failure / when LitHub is unset."""
+        from core.config import get_settings
+        s = get_settings()
+        if not s.LITHUB_BASE_URL:
+            return None
+        try:
+            from clients.lithub_client import LitHubClient
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                papers = await LitHubClient(
+                    http_client=client, settings=s,
+                ).internal_papers_bulk([paper_id])
+            p = (papers or [None])[0] if isinstance(papers, list) else None
+            if not isinstance(p, dict):
+                return None
+            return await self._create_local_article(
+                pmid=self._norm_pmid(p.get("pmid")),
+                doi=p.get("doi"),
+                doi_norm=normalize_doi(p.get("doi") or "") or None,
+                pmcid=((p.get("pmcid") or "").strip().upper() or None),
+                title=p.get("title"),
+                journal=p.get("journal"),
+                year=self._year_from(
+                    p.get("year") or p.get("publication_year") or p.get("pub_date"),
+                ),
+                authors=p.get("authors"),
+            )
+        except Exception:  # noqa: BLE001 — best-effort import, never blocks save
+            return None
+
+    async def _create_local_article(
+        self, *, pmid, doi, doi_norm, pmcid, title, journal, year, authors,
+    ) -> Optional[dict[str, Any]]:
+        """Find-or-create a local ``articles`` row from identifiers/metadata via
+        the pipeline upsert (dedups by canonical_key/pmid/doi)."""
+        from models.common import new_id, utcnow
+        from services.pipeline import _upsert_article
+        first_author = None
+        authors_json: list[dict[str, Any]] = []
+        for a in (authors or []):
+            if isinstance(a, str) and a.strip():
+                authors_json.append({"fullName": a.strip()})
+                first_author = first_author or a.strip()
+            elif isinstance(a, dict):
+                authors_json.append(a)
+                first_author = first_author or (a.get("fullName") or a.get("name"))
+        ck = make_canonical_key(
+            pmid=pmid, doi=doi_norm or doi, pmcid=pmcid,
+            title=title, year=year, journal=journal, first_author=first_author,
+        )
+        rec = {
+            "id": new_id(), "canonical_key": ck,
+            "title": title or "(untitled)", "abstract": None,
+            "journal": journal or None, "publication_year": year,
+            "doi": doi or doi_norm or None, "doi_normalized": doi_norm,
+            "pmid": pmid, "pmcid": pmcid,
+            "authors_json": authors_json, "source_ids_json": {},
+            "publication_types_json": [], "is_guideline": False,
+            "is_preprint": False, "is_retracted": False,
+            "has_expression_of_concern": False, "full_text_status": "unknown",
+            "sources_present": ["lithub_import"],
+            "source_urls_json": [], "created_at": utcnow(), "updated_at": utcnow(),
+        }
+        try:
+            aid = await _upsert_article(rec)
+        except Exception:  # noqa: BLE001
+            return None
+        db = get_db()
+        return await db[Collections.ARTICLES].find_one({"id": aid}, self._SAVE_PROJ)
 
     async def update_item(
         self, user_id: str, item_id: str, body: LibraryItemUpdate,

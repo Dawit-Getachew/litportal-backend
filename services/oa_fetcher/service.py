@@ -359,24 +359,37 @@ class OAFetcherService:
         force_refresh: bool = False,
         client: Optional[httpx.AsyncClient] = None,
     ) -> dict[str, Any]:
-        """Bulk fetch with the per-call cap."""
+        """Bulk fetch with the per-call cap.
+
+        B5/perf — the first ``cap`` articles are fetched CONCURRENTLY (bounded by
+        a semaphore) instead of one-at-a-time. Each ``fetch_for_article`` writes
+        only its own article's extracts + access-location row, so concurrency is
+        safe; results are reassembled in the original order. This is a major cut
+        to the ``fetching_oa_full_text`` phase latency.
+        """
         cap = _env_int("OA_MAX_FULL_TEXT_FETCHES_PER_SEARCH", 10)
-        results: list[dict[str, Any]] = []
-        for i, aid in enumerate(article_ids):
-            if i >= cap:
-                results.append({
-                    "article_id": aid, "status": "skipped_cap_exceeded",
-                    "source": None, "license": None, "license_category": None,
-                    "can_ingest_for_summary": False, "sections_created": 0,
-                    "token_count": 0, "evidence_text_level": None,
-                    "error_code": "cap_exceeded",
-                })
-                continue
-            r = await self.fetch_for_article(
-                article_id=aid, session_id=session_id, user_id=user_id,
-                force_refresh=force_refresh, client=client,
-            )
-            results.append(r)
+        max_conc = max(1, _env_int("OA_MAX_CONCURRENT_FETCHES", 6))
+        sem = asyncio.Semaphore(max_conc)
+        to_fetch = article_ids[:cap]
+        overflow = article_ids[cap:]
+
+        async def _one(aid: str) -> dict[str, Any]:
+            async with sem:
+                return await self.fetch_for_article(
+                    article_id=aid, session_id=session_id, user_id=user_id,
+                    force_refresh=force_refresh, client=client,
+                )
+
+        fetched = await asyncio.gather(*(_one(a) for a in to_fetch)) if to_fetch else []
+        results: list[dict[str, Any]] = list(fetched)
+        for aid in overflow:
+            results.append({
+                "article_id": aid, "status": "skipped_cap_exceeded",
+                "source": None, "license": None, "license_category": None,
+                "can_ingest_for_summary": False, "sections_created": 0,
+                "token_count": 0, "evidence_text_level": None,
+                "error_code": "cap_exceeded",
+            })
         summary = {
             "fetched": sum(1 for r in results if r["status"] == "fetched"),
             "cache_hits": sum(1 for r in results if r["status"] == "cache_hit"),

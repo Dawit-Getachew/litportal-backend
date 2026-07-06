@@ -1680,18 +1680,47 @@ async def session_status(session_id: str, current_user: dict = Depends(get_curre
             "excluded": excluded,
         }
     stage_map = {
+        "draft": "queued",
         "blocked_phi": "blocked",
         "searching": "searching",
         "ranking": "ranking",
+        "brokering_access": "brokering_access",
+        "fetching_oa_full_text": "fetching_full_text",
+        "awaiting_clinical_subject": "needs_clarification",
+        "summarizing": "summarizing",
         "awaiting_selection": "ready",
         "complete": "ready",
         "error": "error",
-        "draft": "queued",
+    }
+    # Monotonic progress across the ACTUAL pipeline phase order
+    #   searching -> ranking -> brokering_access -> fetching_oa_full_text
+    #   -> awaiting_selection.
+    # Every SessionStatus is covered so the percentage never regresses (the old
+    # map returned 0 for brokering_access/fetching_oa_full_text, which made the
+    # bar jump 60% -> 0% mid-run and the client poll-loop never finish). All
+    # terminal states report 100 so the client's "poll until 100%" loop ends.
+    progress_map = {
+        "draft": 5,
+        "searching": 25,
+        "ranking": 45,
+        "brokering_access": 65,
+        "fetching_oa_full_text": 85,
+        "summarizing": 92,
+        "awaiting_selection": 100,
+        "complete": 100,
+        "awaiting_clinical_subject": 100,  # terminal clarification — stop polling
+        "blocked_phi": 100,                # terminal — stop polling
+        "error": 100,                      # terminal — stop polling
+    }
+    terminal = status in {
+        "awaiting_selection", "complete", "error",
+        "blocked_phi", "awaiting_clinical_subject",
     }
     return {
         "status": status,
         "stage": stage_map.get(status, status),
-        "progress": 100 if articles_ready else (60 if status == "ranking" else (25 if status == "searching" else 0)),
+        "progress": progress_map.get(status, 0),
+        "done": terminal,
         "parsed": doc.get("pico_json") or None,
         "evaluator": doc.get("evaluator_json"),
         "counts": counts,
