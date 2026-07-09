@@ -1,0 +1,26 @@
+digraph where_it_sits {
+  bgcolor="white"; rankdir=LR; nodesep=0.45; ranksep=0.9; splines=spline;
+  graph [fontname="Helvetica", fontsize=13];
+  node  [fontname="Helvetica", fontsize=11];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a5a5a", fontcolor="#333333"];
+
+  Clinician [label="Clinician browser", shape=box, style="rounded,filled", fillcolor="white", color="#8a8a8a"];
+  Portal    [label="LitPortal :8000\nserver:app", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  Identity  [label="scienthesis-identity :8100", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  LitHub    [label="scienthesis-lithub :8200", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+
+  Mongo [label="MongoDB / Motor", shape=cylinder, style=filled, fillcolor="#EAF2FB", color="#3B78C3"];
+
+  subgraph cluster_ext {
+    label="External services"; labeljust=l; style="rounded,filled"; color="#2E8B8B"; fillcolor="#eef7f5"; fontcolor="#555555";
+    Sources [label="PubMed / Europe PMC / OpenAlex / guidelines", shape=box, style="rounded,filled", fillcolor="white", color="#2E8B8B"];
+    LLM     [label="LLM provider\nOpenAI / OpenRouter / Anthropic", shape=box, style="rounded,filled", fillcolor="white", color="#2E8B8B"];
+  }
+
+  Clinician -> Portal   [label="HTTPS + bearer JWT"];
+  Portal    -> Mongo    [label="Motor", color="#3B78C3"];
+  Portal    -> Identity [label="RS256 JWKS verify + X-Service-Token"];
+  Portal    -> LitHub   [label="X-Service-Token library dual-write"];
+  Portal    -> Sources  [label="HTTPS federated retrieval"];
+  Portal    -> LLM      [label="HTTPS citation-gated summary"];
+}

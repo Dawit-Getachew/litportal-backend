@@ -1,0 +1,32 @@
+digraph architecture_overview {
+  bgcolor="white"; rankdir=TB; nodesep=0.45; ranksep=0.9; splines=spline;
+  graph [fontname="Helvetica", fontsize=13];
+  node  [fontname="Helvetica", fontsize=11];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a5a5a", fontcolor="#333333"];
+
+  Routers    [label="FastAPI routers", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  Auth       [label="Auth chain\ncore/security", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  PHI        [label="PHI guard\nservices/phi_guard", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  Pipeline   [label="Search pipeline\nservices/pipeline", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  Connectors [label="Source connectors\nPubMed / Europe PMC / OpenAlex", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  Broker     [label="Access broker + OA fetch", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  Jobs       [label="In-process job runner", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  Verifier   [label="Citation verifier + LLM\nservices/citation_verifier, llm_provider", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+  Outbox     [label="LitHub outbox sweeper\nservices/lithub_sync", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+
+  Mongo  [label="MongoDB + GridFS", shape=cylinder, style=filled, fillcolor="#EAF2FB", color="#3B78C3"];
+
+  LitHub [label="scienthesis-lithub\n:8200", shape=box, style="rounded,filled", fillcolor="white", color="#E8833A", penwidth=1.7];
+
+  Routers -> Auth;
+  Routers -> PHI;
+  PHI     -> Pipeline;
+  Pipeline -> Connectors;
+  Pipeline -> Broker;
+  Pipeline -> Mongo [color="#3B78C3"];
+  Routers -> Jobs;
+  Jobs    -> Verifier;
+  Jobs    -> Mongo [color="#3B78C3"];
+  Outbox  -> Mongo [color="#3B78C3"];
+  Outbox  -> LitHub [label="X-Service-Token"];
+}

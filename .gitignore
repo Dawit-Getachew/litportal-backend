@@ -39,6 +39,12 @@ Desktop.ini
 *.swp
 .idea/
 .vscode/
+
+# Internal working notes — kept locally, not shipped in the reviewed repo
+*_STATUS.md
+*_AUDIT_REPORT.md
+INTEGRATION_PLAN.md
+DEPLOYMENT_ENV_CHECKLIST.md
 FE_BUGFIXES.md
 FRONTEND_INTEGRATION_GUIDE.md
 OPTION_A_LITHUB_GROUPING.md

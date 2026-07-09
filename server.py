@@ -42,7 +42,6 @@ from routers import (  # noqa: E402
     enrichment as enrichment_router,
     folders,
     full_text_import as full_text_import_router,
-    handoff_downloads as handoff_downloads_router,
     institution_settings,
     jobs as jobs_router,
     known_article_lookup as known_article_lookup_router,
@@ -720,7 +719,6 @@ _API_ROUTERS = [
     enrichment_router.router,
     evidence_packets_router.clinician_router,
     evidence_packets_router.admin_router,
-    handoff_downloads_router.router,
 ]
 for r in _API_ROUTERS:
     app.include_router(r, prefix="/api")

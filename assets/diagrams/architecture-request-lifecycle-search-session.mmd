@@ -1,0 +1,25 @@
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#E8833A','primaryTextColor':'#1a1a1a','lineColor':'#333333','signalColor':'#333333','signalTextColor':'#1a1a1a','actorBkg':'#ffffff','actorBorder':'#E8833A','actorTextColor':'#1a1a1a','actorLineColor':'#c9c9c9','labelBoxBkgColor':'#f7f7f7','labelBoxBorderColor':'#cccccc','labelTextColor':'#1a1a1a','loopTextColor':'#1a1a1a','noteBkgColor':'#fffbe6','noteBorderColor':'#d9c66a','noteTextColor':'#1a1a1a','fontFamily':'Helvetica','fontSize':'14px'}}}%%
+sequenceDiagram
+    participant C as Clinician
+    participant API as Portal API
+    participant G as PHI guard
+    participant P as Pipeline (async)
+    participant S as Sources
+    participant M as MongoDB
+
+    C->>API: POST /api/search-sessions {question}
+    API->>G: screen(question)
+    alt PHI detected
+        G-->>API: blocked
+        API->>M: persist status=blocked_phi (no question text)
+        API-->>C: 200 blocked_phi
+    else clean
+        API->>M: persist status=searching, sanitized_question
+        API-->>C: 200 session id
+        API->>P: fire pipeline(session)
+        P->>S: parse + federated retrieval
+        P->>M: dedup + rank -> search_session_articles
+        P->>S: access broker (+ optional OA fetch)
+        P->>M: status=awaiting_selection
+    end
+    C->>API: GET /api/search-sessions/{id}/status (poll)
