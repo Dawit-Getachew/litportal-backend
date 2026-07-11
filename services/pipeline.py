@@ -1574,6 +1574,55 @@ async def run_pipeline(
                     )
         except Exception:  # noqa: BLE001
             logger.exception("medsafety1 medication rescue failed (non-fatal)")
+        # Phase TopicRescue — deterministic supplement / nutrient /
+        # "benefit-of-<topic>" subject rescue. Runs ONLY when anchor
+        # derivation AND the medication rescue both found no primary clinical
+        # entity. Extracts a concrete searchable topic (e.g. "creatine
+        # supplementation") and injects an intervention/exposure anchor so a
+        # clearly answerable question runs a real search instead of
+        # dead-ending at ``awaiting_clinical_subject``. NO LLM. NO network.
+        try:
+            _still_no_subject = (
+                anchors_out.get("anchor_failure_reason") == "no_primary_clinical_entity"
+                or not (anchors_out.get("primary_anchors") or [])
+            )
+            if _still_no_subject:
+                from services.topic_subject_rescue import (
+                    build_topic_anchor,
+                    detect_topic_subject,
+                )
+                _topic_q = (
+                    parsed.get("normalized_question") or sanitized_question or ""
+                )
+                _topic = detect_topic_subject(_topic_q)
+                if _topic:
+                    _topic_anchor = build_topic_anchor(_topic)
+                    anchors_out["primary_anchors"] = [_topic_anchor]
+                    anchors_out["anchor_failure_reason"] = None
+                    anchors_out["anchor_repair_applied"] = True
+                    anchors_out["topic_subject_rescue_applied"] = True
+                    # Query the topic (not a generic modifier): synthesize a
+                    # must_have_concept so the Boolean compiler anchors on it.
+                    _mh = list(picott_payload.get("must_have_concepts") or [])
+                    _have = {
+                        (m.get("concept") or "").lower()
+                        for m in _mh if isinstance(m, dict)
+                    }
+                    if _topic_anchor["canonical_concept"].lower() not in _have:
+                        _mh.append({
+                            "concept": _topic_anchor["canonical_concept"],
+                            "role": _topic_anchor.get("role") or "intervention",
+                            "synonyms": list(_topic_anchor.get("synonyms") or []),
+                            "required_for_high_relevance": True,
+                        })
+                        picott_payload["must_have_concepts"] = _mh
+                    logger.info(
+                        "topic_subject_rescue_applied topic=%s entity=%s",
+                        _topic_anchor.get("canonical_concept"),
+                        _topic_anchor.get("entity_type"),
+                    )
+        except Exception:  # noqa: BLE001
+            logger.exception("topic_subject_rescue failed (non-fatal)")
         # Phase 6G.1 — apply background-definition picott_overrides
         # produced by the anchor service when "What is X?" repair
         # succeeded. We only OVERWRITE the targeted keys
