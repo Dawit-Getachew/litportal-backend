@@ -3364,9 +3364,29 @@ async def run_pipeline(
                         "diagnostic_accuracy_study"
                     } else 50
                 )
-            stats = await openalex_connector.enrich_many(
-                unique_articles, client=http_client, search_session_id=session_id,
-            )
+            # OpenAlex enrichment is best-effort metadata (citation counts, OA
+            # links) and does up to 4 lookups per article with retry/backoff. A
+            # slow or rate-limited OpenAlex must NEVER stall the whole search
+            # for minutes, so cap it with a wall-clock budget and proceed with
+            # whatever enriched in time — articles still rank via source-native
+            # signals. Configurable via OPENALEX_ENRICH_BUDGET_S.
+            try:
+                stats = await asyncio.wait_for(
+                    openalex_connector.enrich_many(
+                        unique_articles, client=http_client, search_session_id=session_id,
+                    ),
+                    timeout=float(os.environ.get("OPENALEX_ENRICH_BUDGET_S", "30")),
+                )
+            except (asyncio.TimeoutError, TimeoutError):
+                logger.warning(
+                    "openalex enrich_many exceeded budget (session=%s); "
+                    "proceeding without full enrichment", session_id,
+                )
+                stats = {
+                    "status": "budget_timeout",
+                    "enrichments_attempted": 0,
+                    "enrichments_applied": 0,
+                }
             oa_stats = {
                 "attempted": stats.get("enrichments_attempted", 0),
                 "applied": stats.get("enrichments_applied", 0),
