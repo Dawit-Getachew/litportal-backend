@@ -89,6 +89,86 @@ _DRUGISH_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Disease / condition morphology — types a salvaged noun phrase as
+# ``disease_or_problem`` (so ranking uses the disease cap) instead of a generic
+# exposure. Covers named conditions plus common medical suffixes.
+_DISEASEISH_RE = re.compile(
+    r"(ha?emorrhage|infarct\w*|ischa?emi\w*|stroke|seps[ie]s|pneumonia|"
+    r"failure|injury|syndrome|disease|disorder|deficiency|hypertension|"
+    r"diabetes|asthma|copd|arrhythmia|fibrillation|embolism|thrombosis|"
+    r"infection|cancer|carcinoma|tumou?r|sarcoma|lymphoma|leuka?emia|"
+    r"fracture|[ae]dema|o[ae]dema|encephalopathy|nephropathy|neuropathy|"
+    r"\w{3,}itis\b|\w{3,}osis\b|\w{3,}[ae]mia\b|\w{3,}oma\b|\w{3,}pathy\b|"
+    r"\w{3,}algia\b)",
+    re.IGNORECASE,
+)
+
+# Words that describe WHAT is being asked (question intent) — never the clinical
+# subject. Stripped when salvaging the residual clinical noun phrase.
+_QUESTION_TYPE_WORDS: frozenset[str] = frozenset({
+    "prognosis", "prognostic", "prognoses", "survival", "mortality", "morbidity",
+    "outcome", "outcomes", "complication", "complications", "sequelae",
+    "epidemiology", "incidence", "prevalence", "etiology", "aetiology", "cause",
+    "causes", "causing", "pathophysiology", "pathogenesis", "mechanism",
+    "mechanisms", "presentation", "symptom", "symptoms", "sign", "signs",
+    "feature", "features", "workup", "evaluation", "assessment", "screening",
+    "prevention", "prophylaxis", "monitoring", "surveillance", "followup",
+    "recurrence", "relapse", "diagnosis", "diagnostic", "diagnose", "treatment",
+    "treat", "therapy", "management", "manage", "benefit", "benefits", "risk",
+    "risks", "effect", "effects", "efficacy", "effectiveness", "safety", "role",
+    "use", "uses", "value", "impact", "importance", "indication", "indications",
+    "dose", "doses", "dosing", "dosage", "guideline", "guidelines",
+    "recommendation", "recommendations", "definition", "overview", "differential",
+})
+
+# Population / setting / temporal glue — never the clinical subject on its own.
+_FILLER_WORDS: frozenset[str] = frozenset({
+    "patient", "patients", "adult", "adults", "male", "males", "female",
+    "females", "men", "women", "man", "woman", "boy", "boys", "girl", "girls",
+    "child", "children", "infant", "infants", "neonate", "neonates", "newborn",
+    "newborns", "adolescent", "adolescents", "elderly", "senior", "seniors",
+    "geriatric", "pediatric", "paediatric", "people", "person", "persons",
+    "individual", "individuals", "subject", "subjects", "case", "cases",
+    "healthy", "young", "old", "older", "population", "populations",
+    "after", "before", "following", "during", "post", "pre", "with", "without",
+    "in", "on", "for", "of", "to", "from", "among", "amongst", "within",
+    "between", "and", "or", "vs", "versus", "regarding", "about", "due",
+    "related", "having", "who", "that", "which", "undergoing", "presenting",
+    "diagnosed", "known", "suspected",
+    # treatment-sequencing / ranking modifiers (never the subject on their own)
+    "first", "second", "third", "line", "first-line", "second-line",
+    "third-line", "initial", "next", "best", "standard", "optimal",
+    "appropriate", "indicated", "ideal", "preferred", "recommended",
+})
+
+_GM_SINGLE: frozenset[str] = frozenset(m for m in GENERIC_MODIFIERS if " " not in m)
+
+# Everything that is NOT a candidate clinical-subject token.
+_SALVAGE_STOP: frozenset[str] = (
+    _QUESTION_OPENER_TOKENS | _FILLER_WORDS | _QUESTION_TYPE_WORDS | _GM_SINGLE
+)
+
+
+def _longest_clinical_span(question: str) -> str:
+    """Return the longest contiguous run of non-stopword tokens — the residual
+    clinical noun phrase after stripping question-intent / filler / generic
+    words. E.g. "prognosis of a patient after cerebellar hemorrhage" ->
+    "cerebellar hemorrhage". Returns "" when nothing concrete remains, so
+    genuinely vague questions still clarify."""
+    toks = [t for t in re.split(r"[^a-z0-9\-]+", (question or "").lower()) if t]
+    best: list[str] = []
+    cur: list[str] = []
+    for t in toks:
+        if t in _SALVAGE_STOP or (len(t) == 1 and not t.isdigit()):
+            if len(cur) > len(best):
+                best = cur
+            cur = []
+        else:
+            cur.append(t)
+    if len(cur) > len(best):
+        best = cur
+    return " ".join(best).strip()
+
 
 def _topic_is_generic(topic: str) -> bool:
     """True when, after stripping closed-set generic modifiers, nothing
@@ -139,6 +219,18 @@ def detect_topic_subject(question: str) -> Optional[str]:
             if tail.startswith(suffix):
                 return f"{surface} {suffix}"
         return surface
+
+    # 3. General clinical-subject salvage: the longest run of non-stopword
+    #    tokens is the most likely clinical subject. Handles prognosis /
+    #    diagnosis / etiology / complication / "X after Y" questions and LLM
+    #    mis-parses (e.g. "cerebellar hemorrhage" from "prognosis of a patient
+    #    after cerebellar hemorrhage"). Vague questions leave an empty / generic
+    #    residual and correctly return None so the pipeline still clarifies.
+    span = _longest_clinical_span(q)
+    if span and not _topic_is_generic(span):
+        words = span.split()
+        if 1 <= len(words) <= 6 and any(len(w) >= 3 and w.isalpha() for w in words):
+            return span
     return None
 
 
@@ -147,9 +239,12 @@ def build_topic_anchor(topic: str) -> dict[str, Any]:
     ``PrimaryAnchor.to_dict()`` shape so it slots straight into
     ``primary_clinical_anchors_json['primary_anchors']``."""
     t = (topic or "").strip()
-    drugish = bool(_DRUGISH_RE.search(t))
-    entity_type = "drug_or_drug_class" if drugish else "exposure"
-    role = "intervention" if drugish else "exposure"
+    if _DISEASEISH_RE.search(t):
+        entity_type, role, cap = "disease_or_problem", "population", 20
+    elif _DRUGISH_RE.search(t):
+        entity_type, role, cap = "drug_or_drug_class", "intervention", 20
+    else:
+        entity_type, role, cap = "exposure", "exposure", 30
     synonyms: list[str] = [t]
     # "creatine supplementation" -> also search bare "creatine".
     base = re.sub(r"\s+(?:supplementation|supplement|intake)$", "", t,
@@ -165,7 +260,7 @@ def build_topic_anchor(topic: str) -> dict[str, Any]:
         "source": "rule",
         "confidence": 0.6,
         "required_for_search": True,
-        "missing_relevance_cap": 20 if drugish else 30,
+        "missing_relevance_cap": cap,
     }
 
 
