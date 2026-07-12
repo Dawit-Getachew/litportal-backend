@@ -3665,10 +3665,18 @@ async def run_pipeline(
         # Phase 5D.1 — pre-upsert articles so each row has a stable
         # article_id BEFORE the default-selection function runs. This
         # lets the function key its rationale dict by article_id and
-        # the persistence loop just looks the row up.
-        for r in ranked:
-            art = r["_article"]
-            art["id"] = await _upsert_article(art)
+        # the persistence loop just looks the row up. Run bounded-concurrent:
+        # each _upsert_article is an independent, race-safe find+write, and a
+        # remote Atlas otherwise serializes 300+ round-trips into minutes.
+        _persist_sem = asyncio.Semaphore(
+            max(1, int(os.environ.get("ARTICLE_PERSIST_CONCURRENCY", "24")))
+        )
+
+        async def _persist_article(_r):
+            async with _persist_sem:
+                _r["_article"]["id"] = await _upsert_article(_r["_article"])
+
+        await asyncio.gather(*[_persist_article(r) for r in ranked])
 
         # Phase 5D.1 — default-selection module is the single source of
         # truth for ``included_by_default``. The PICOTT ranker already
@@ -3883,6 +3891,7 @@ async def run_pipeline(
                              {x["_article"]["id"] for x in new_top}]
                 ranked = new_top + displaced + ranked_tail
 
+        _ssa_rows: list[dict[str, Any]] = []
         for r in ranked:
             art = r["_article"]
             article_id = art["id"]
@@ -3974,7 +3983,14 @@ async def run_pipeline(
             sa["base_rank_score"] = float(
                 r.get("l1_pre_boost_rank_score", r.get("overall_rank_score")) or 0.0
             )
-            await db[Collections.SEARCH_SESSION_ARTICLES].insert_one(sa)
+            _ssa_rows.append(sa)
+        # Single bulk insert instead of one round-trip per article — these
+        # rows are independent and a remote Atlas makes per-article inserts the
+        # dominant ranking-stage cost.
+        if _ssa_rows:
+            await db[Collections.SEARCH_SESSION_ARTICLES].insert_many(
+                _ssa_rows, ordered=False,
+            )
 
         # AI Agent 3 — evidence curator / surfacing (B4 / B4a). Reviews the
         # deterministically-excluded (soft) candidates and writes advisory
@@ -4009,19 +4025,22 @@ async def run_pipeline(
         # Stays empty unless mode == "active" AND at least one
         # retracted-on-stable-join article is present.
         _k3b_step2_active_excluded: list[dict[str, Any]] = []
+        # Pre-upsert the excluded candidates concurrently (same bounded pool)
+        # so this loop's per-article Atlas writes don't serialize. The
+        # canonical post-upsert id is back-stamped onto each ``ex`` dict (Phase
+        # K3B Wave 1 Step 1.5) so the K3A classifier + K3B enforcement below
+        # read the SAME id that was persisted to ``articles`` / SSA.
+        async def _persist_excluded(_ex):
+            async with _persist_sem:
+                try:
+                    _ex["id"] = await _upsert_article(_ex)
+                except Exception:  # noqa: BLE001
+                    _ex["id"] = None
+        await asyncio.gather(*[_persist_excluded(ex) for ex in excluded_pre])
+
         for ex in excluded_pre:
-            try:
-                article_id = await _upsert_article(ex)
-                # Phase K3B Wave 1 Step 1.5 — back-stamp the canonical
-                # post-upsert id onto the in-flight ``ex`` dict so the
-                # K3A classifier (and the K3A.3 join-status check + K3B
-                # Wave 1 enforcement enrichment) reads the SAME id that
-                # was just persisted to ``articles`` / SSA. Mirrors the
-                # ranked-loop back-stamp at line ~2132. Fixes the
-                # orphan-rate root cause documented in
-                # ``memory/k3b_step1_5_orphan_diagnosis_*.md``.
-                ex["id"] = article_id
-            except Exception:  # noqa: BLE001
+            article_id = ex.get("id")
+            if not article_id:
                 continue
             # Phase K3B Wave 1 Step 2 — ACTIVE exclusion gate.
             # Eligibility (binding):
