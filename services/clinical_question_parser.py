@@ -424,9 +424,56 @@ def _detect_drugs(q: str) -> list[str]:
 _LLM_SYSTEM = (
     "You are a clinical librarian's structuring assistant. You DO NOT answer "
     "the clinical question. You DO NOT invent medical facts. You ONLY restate "
-    "the question and extract PICO + question type as structured JSON. If you "
-    "are unsure of a field, leave it empty. Never include patient identifiers."
+    "the question and extract PICO + question type. Never include patient "
+    "identifiers.\n"
+    "\n"
+    "Return ONE flat JSON object with EXACTLY these top-level keys. Do NOT "
+    "nest them under a 'PICO' (or any other) object, and do NOT rename them:\n"
+    '  "normalized_question": string (the question restated in one sentence),\n'
+    '  "clinical_question_type": one of treatment|diagnosis|prognosis|harm|'
+    "screening|prevention|etiology|guideline|epidemiology|pharmacology|other,\n"
+    '  "specialty": string,\n'
+    '  "population": string (the P),\n'
+    '  "intervention_or_exposure": string (the I/E),\n'
+    '  "comparator": string (the C),\n'
+    '  "outcomes": array of strings (the O),\n'
+    '  "setting": string,\n'
+    '  "time_horizon": string,\n'
+    '  "key_concepts": array of strings,\n'
+    '  "mesh_terms": array of strings,\n'
+    '  "synonyms": array of strings,\n'
+    '  "drug_names_and_classes": array of strings,\n'
+    '  "exclusions": array of strings,\n'
+    '  "rationale": string (brief note on how you extracted the fields).\n'
+    "Every key MUST be present. Use an empty string \"\" or empty array [] for "
+    "any field you cannot determine. String fields must be strings (never "
+    "arrays); array fields must be arrays (never strings)."
 )
+
+# Concrete typed example sent alongside ``_LLM_SYSTEM`` as the schema hint so
+# the model emits the flat ParsedPICO shape (strings vs arrays) rather than a
+# freelanced ``{"PICO": {...}}`` nesting, which ``_validate_llm_output`` would
+# otherwise have to salvage.
+_LLM_SCHEMA_HINT: dict[str, Any] = {
+    "normalized_question": "string",
+    "clinical_question_type": (
+        "treatment|diagnosis|prognosis|harm|screening|prevention|"
+        "etiology|guideline|epidemiology|pharmacology|other"
+    ),
+    "specialty": "string",
+    "population": "string",
+    "intervention_or_exposure": "string",
+    "comparator": "string",
+    "outcomes": ["string"],
+    "setting": "string",
+    "time_horizon": "string",
+    "key_concepts": ["string"],
+    "mesh_terms": ["string"],
+    "synonyms": ["string"],
+    "drug_names_and_classes": ["string"],
+    "exclusions": ["string"],
+    "rationale": "string",
+}
 
 
 class ClinicalQuestionParserService:
@@ -465,8 +512,7 @@ class ClinicalQuestionParserService:
 
         # ---- LLM path (optional enrichment) ----
         if llm_provider.is_configured():
-            schema = {k: "..." for k in ParsedPICO.model_fields.keys()}
-            result = await llm_provider.complete_json(_LLM_SYSTEM, q, schema)
+            result = await llm_provider.complete_json(_LLM_SYSTEM, q, _LLM_SCHEMA_HINT)
             validated = self._validate_llm_output(result)
             if validated is not None:
                 validated["clinical_question_type"] = _canonicalize_qtype(
@@ -633,26 +679,108 @@ class ClinicalQuestionParserService:
             merged["shorthand_substitutions"] = list(shorthand_substitutions)
         return merged
 
+    # Canonical ParsedPICO field partitioning, used to normalize LLM output.
+    _STR_FIELDS = (
+        "normalized_question", "clinical_question_type", "specialty",
+        "population", "intervention_or_exposure", "comparator",
+        "setting", "time_horizon", "rationale",
+    )
+    _LIST_FIELDS = (
+        "outcomes", "key_concepts", "mesh_terms", "synonyms",
+        "drug_names_and_classes", "exclusions",
+    )
+    # Sub-keys a nested ``PICO`` object commonly uses, mapped to our flat keys.
+    _NESTED_ALIASES = {
+        "population": ("population", "patient", "patients", "problem", "p", "P"),
+        "intervention_or_exposure": (
+            "intervention_or_exposure", "intervention", "exposure",
+            "index_test", "i", "I", "e", "E",
+        ),
+        "comparator": ("comparator", "comparison", "control", "c", "C"),
+        "outcomes": ("outcomes", "outcome", "o", "O"),
+        "setting": ("setting", "context", "s", "S"),
+        "time_horizon": ("time_horizon", "time", "timing", "timeframe", "t", "T"),
+    }
+
     @staticmethod
     def _validate_llm_output(d: Any) -> dict[str, Any] | None:
+        """Normalize the LLM's JSON into the flat ParsedPICO shape.
+
+        The model frequently freelances a nested ``{"PICO": {...}, "question":
+        ..., "question_type": ...}`` shape or single-key aliases. Rather than
+        discard any answer that isn't already perfectly flat (which forced the
+        deterministic fallback 100% of the time), salvage what we can: flatten a
+        nested PICO object, resolve common aliases, coerce list/string types,
+        and backfill missing keys with safe defaults. ``ParsedPICO(extra=ignore)``
+        is the final gate, so an over-permissive result here still can't produce
+        an invalid model.
+        """
         if not isinstance(d, dict):
             return None
-        required = {
-            "normalized_question", "clinical_question_type", "specialty",
-            "population", "intervention_or_exposure", "comparator",
-            "outcomes", "setting", "time_horizon", "key_concepts",
-            "mesh_terms", "synonyms", "drug_names_and_classes",
-            "exclusions", "rationale",
+        cls = ClinicalQuestionParserService
+        d = dict(d)  # shallow copy — never mutate the caller's object
+
+        # --- Flatten a nested PICO container, if present. ---
+        nested: dict[str, Any] | None = None
+        for nk in ("PICO", "pico", "pico_elements", "PICOTT", "picott", "elements"):
+            if isinstance(d.get(nk), dict):
+                nested = d.pop(nk)
+                break
+        if nested is not None:
+            for canon, aliases in cls._NESTED_ALIASES.items():
+                if d.get(canon) not in (None, "", []):
+                    continue
+                for a in aliases:
+                    if a in nested and nested[a] not in (None, "", []):
+                        d[canon] = nested[a]
+                        break
+
+        # --- Resolve top-level aliases the model uses for our keys. ---
+        _top_aliases = {
+            "normalized_question": ("question", "normalized", "restated_question", "restated"),
+            "clinical_question_type": ("question_type", "type_of_question", "type"),
+            "intervention_or_exposure": ("intervention", "exposure", "index_test"),
+            "outcomes": ("outcome",),
+            "drug_names_and_classes": ("drugs", "drug_names", "medications"),
         }
-        if not required.issubset(d.keys()):
-            return None
-        for k in ("outcomes", "key_concepts", "mesh_terms", "synonyms",
-                  "drug_names_and_classes", "exclusions"):
+        for canon, aliases in _top_aliases.items():
+            if d.get(canon) not in (None, "", []):
+                continue
+            for a in aliases:
+                if d.get(a) not in (None, "", []):
+                    d[canon] = d[a]
+                    break
+
+        # --- Coerce string fields (a list -> comma-joined; anything -> str). ---
+        for k in cls._STR_FIELDS:
+            v = d.get(k)
+            if v is None:
+                d[k] = ""
+            elif isinstance(v, str):
+                d[k] = v.strip()
+            elif isinstance(v, list):
+                d[k] = ", ".join(str(x).strip() for x in v if str(x).strip())
+            else:
+                d[k] = str(v)
+
+        # --- Coerce list fields (a string -> single-item list). ---
+        for k in cls._LIST_FIELDS:
             v = d.get(k)
             if v is None:
                 d[k] = []
-            elif not isinstance(v, list):
+            elif isinstance(v, str):
+                d[k] = [v.strip()] if v.strip() else []
+            elif isinstance(v, list):
+                d[k] = [str(x).strip() for x in v if str(x).strip()]
+            else:
                 return None
+
+        # --- Require a usable core; else let the deterministic parser win. ---
+        if not (d.get("normalized_question")
+                or d.get("population")
+                or d.get("intervention_or_exposure")
+                or d.get("outcomes")):
+            return None
         return d
 
 
