@@ -37,6 +37,7 @@ from routers import (  # noqa: E402
     audit,
     auth,
     benchmark_gold as benchmark_gold_router,
+    chat as chat_router,
     cleanup,
     evidence_packets as evidence_packets_router,
     enrichment as enrichment_router,
@@ -717,11 +718,17 @@ _API_ROUTERS = [
     known_article_lookup_router.router,
     full_text_import_router.router,
     enrichment_router.router,
+    chat_router.router,
     evidence_packets_router.clinician_router,
     evidence_packets_router.admin_router,
 ]
 for r in _API_ROUTERS:
     app.include_router(r, prefix="/api")
+
+# Portal Engine compatibility: the frontend hardcodes the versioned path
+# ``/api/v1/chat/stream`` (portalEngineClient) as well as ``/api/chat/stream``
+# (covered by the loop above). Add the versioned mount so both resolve.
+app.include_router(chat_router.router, prefix="/api/v1")
 
 # B10 — LitPulse module mount: also expose every router under
 # LITPORTAL_MODULE_PREFIX (e.g. /api/litportal/*) so LitPortal runs both

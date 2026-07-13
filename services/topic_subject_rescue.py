@@ -234,6 +234,19 @@ def detect_topic_subject(question: str) -> Optional[str]:
     return None
 
 
+# Structural / generic words that must never become a lone OR synonym — as a
+# single token they would match almost everything. The salvaged-token
+# broadening below drops these.
+_TOPIC_TOKEN_STOP = frozenset({
+    "disease", "diseases", "syndrome", "syndromes", "disorder", "disorders",
+    "chronic", "acute", "severe", "mild", "patient", "patients", "adult",
+    "adults", "child", "children", "elderly", "therapy", "treatment",
+    "management", "complication", "complications", "risk", "risks", "effect",
+    "effects", "outcome", "outcomes", "prognosis", "diagnosis", "symptom",
+    "symptoms", "condition", "conditions",
+})
+
+
 def build_topic_anchor(topic: str) -> dict[str, Any]:
     """Build a deterministic primary anchor in the exact
     ``PrimaryAnchor.to_dict()`` shape so it slots straight into
@@ -251,6 +264,19 @@ def build_topic_anchor(topic: str) -> dict[str, Any]:
                   flags=re.IGNORECASE).strip()
     if base and base.lower() != t.lower():
         synonyms.append(base)
+    # A salvaged multi-word topic only exists here because normal anchor
+    # detection already failed; the exact compound phrase frequently matches ~0
+    # records. Add its individual significant tokens as OR synonyms so the
+    # Boolean compiler broadens to them (e.g. "migraine cancer" also searches
+    # "migraine" / "cancer") instead of dead-ending at zero results. This runs
+    # ONLY on the last-resort rescue path, so it can never widen a query that
+    # already anchors and works.
+    _toks = [
+        w for w in re.split(r"\s+", t)
+        if len(w) >= 4 and w.isalpha() and w.lower() not in _TOPIC_TOKEN_STOP
+    ]
+    if len(_toks) >= 2:
+        synonyms.extend(_toks)
     return {
         "text": t,
         "canonical_concept": t,
