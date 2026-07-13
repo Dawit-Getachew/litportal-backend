@@ -860,8 +860,13 @@ async def _upsert_article(art: dict[str, Any]) -> str:
     try:
         await db[Collections.ARTICLES].insert_one(doc)
     except DuplicateKeyError:
-        # Race: another worker inserted the same identifier between our
-        # lookup and our insert. Re-resolve and return the existing id.
+        # Race: another concurrent upsert (same persist batch) or a prior
+        # request inserted a row sharing one of our unique identifiers
+        # (canonical_key / pmid / doi_normalized / pmcid) between our lookup and
+        # our insert. Re-resolve to the winner's id. The winning insert IS
+        # committed (that is what raised E11000) but may not be visible on our
+        # very first read under concurrent load, so retry a few times with a
+        # short backoff before giving up.
         ors: list[dict[str, Any]] = [{"canonical_key": ck}]
         if doc.get("pmid"):
             ors.append({"pmid": doc["pmid"]})
@@ -869,11 +874,13 @@ async def _upsert_article(art: dict[str, Any]) -> str:
             ors.append({"doi_normalized": doc["doi_normalized"]})
         if doc.get("pmcid"):
             ors.append({"pmcid": doc["pmcid"]})
-        race = await db[Collections.ARTICLES].find_one(
-            {"$or": ors}, {"_id": 0, "id": 1},
-        )
-        if race:
-            return race["id"]
+        for _attempt in range(6):
+            race = await db[Collections.ARTICLES].find_one(
+                {"$or": ors}, {"_id": 0, "id": 1},
+            )
+            if race:
+                return race["id"]
+            await asyncio.sleep(0.05 * (_attempt + 1))
         raise
     return doc["id"]
 
@@ -3674,9 +3681,43 @@ async def run_pipeline(
 
         async def _persist_article(_r):
             async with _persist_sem:
-                _r["_article"]["id"] = await _upsert_article(_r["_article"])
+                try:
+                    _r["_article"]["id"] = await _upsert_article(_r["_article"])
+                except Exception:  # noqa: BLE001 — one bad row (e.g. an
+                    # unrecoverable duplicate-key race) must NOT abort the whole
+                    # search; mirror the failure-isolation _persist_excluded has.
+                    logger.exception(
+                        "persist of ranked article failed; dropping it "
+                        "(session=%s pmid=%s doi=%s)",
+                        session_id,
+                        _r["_article"].get("pmid"),
+                        _r["_article"].get("doi_normalized"),
+                    )
+                    _r["_article"]["id"] = None
 
         await asyncio.gather(*[_persist_article(r) for r in ranked])
+        # Drop candidates that could not be persisted, and collapse any that
+        # resolved to the SAME persisted article (identifier-level duplicates
+        # from different connectors, e.g. a PubMed record + an OpenAlex record
+        # sharing a DOI). This prevents a single bad row from erroring the
+        # session, dangling an SSA reference to a non-persisted article, or
+        # surfacing the same paper twice.
+        _ranked_before = len(ranked)
+        _seen_article_ids: set[str] = set()
+        _deduped_ranked = []
+        for _r in ranked:
+            _aid = (_r.get("_article") or {}).get("id")
+            if not _aid or _aid in _seen_article_ids:
+                continue
+            _seen_article_ids.add(_aid)
+            _deduped_ranked.append(_r)
+        if len(_deduped_ranked) != _ranked_before:
+            logger.warning(
+                "ranked persist: kept %d of %d candidates (dropped unpersistable "
+                "or duplicate rows) session=%s",
+                len(_deduped_ranked), _ranked_before, session_id,
+            )
+        ranked = _deduped_ranked
 
         # Phase 5D.1 — default-selection module is the single source of
         # truth for ``included_by_default``. The PICOTT ranker already
