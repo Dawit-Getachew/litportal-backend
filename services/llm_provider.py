@@ -187,6 +187,14 @@ class LLMProvider:
                 headers={"Authorization": f"Bearer {self._openai_key}"},
                 json=body,
             )
+            if r.status_code >= 400:
+                # Surface the exact OpenAI error (invalid key / insufficient
+                # quota / bad model) in the logs so a broken key doesn't just
+                # silently degrade to the deterministic parser fallback.
+                logger.error(
+                    "OpenAI API error %s (model=%s): %s",
+                    r.status_code, model, r.text[:600],
+                )
             r.raise_for_status()
             data = r.json()
             content = data["choices"][0]["message"]["content"]
