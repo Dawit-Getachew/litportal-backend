@@ -217,6 +217,18 @@ async def _build_summary_inputs(
                 continue
         safe_ids.append(aid)
 
+    # Materialize the evidence packet FIRST so lazily-created abstract extracts
+    # (ensure_abstract_extract) exist BEFORE we gather them below. Previously
+    # prepare_evidence_packet ran a few lines later, so the very first
+    # generate-summary for an article gathered zero extracts and failed with a
+    # spurious ``no_usable_evidence`` (the abstract extract was created just
+    # after the gather and never re-read; a retry then "fixed" it). This call
+    # reads the session's post-override ``user_included`` selection, so it must
+    # run AFTER the override block above and BEFORE this gather.
+    packet = await evidence_extraction.prepare_evidence_packet(
+        session=session, user_id=user_id
+    )
+
     # Gather extracts per article (user-uploaded preferred over abstract).
     extracts_by_article: dict[str, list[dict]] = {}
     for aid in safe_ids:
@@ -313,11 +325,9 @@ async def _build_summary_inputs(
             "_is_excluded": False,
         })
 
-    packet = await evidence_extraction.prepare_evidence_packet(
-        session=session, user_id=user_id
-    )
     # Phase 6B.2 — augment packet with caveat counts so the router can
-    # persist ``evidence_packet_summary`` on the session document.
+    # persist ``evidence_packet_summary`` on the session document. (The packet
+    # itself is now built earlier, before the extract gather above.)
     packet["override_caveats"] = override_caveats
     packet["directly_relevant_count"] = direct_count
     packet["indirect_override_count"] = indirect_override_count
