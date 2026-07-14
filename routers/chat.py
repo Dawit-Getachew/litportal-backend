@@ -259,3 +259,72 @@ async def stream_chat(req: ChatStreamRequest) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /chat/verify-citations — companion to /chat/stream. The frontend posts
+# the streamed summary + the record ids it was grounded on; we resolve each
+# ``[n]`` marker to its article and flag any that don't map to a provided
+# record. Same contract family (unauthenticated, scoped by search_id).
+# ---------------------------------------------------------------------------
+class VerifyCitationsRequest(BaseModel):
+    search_id: str
+    record_ids: Optional[list[str]] = None
+    summary_text: str = ""
+
+
+_CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
+
+
+@router.post("/chat/verify-citations")
+async def verify_citations(req: VerifyCitationsRequest) -> dict[str, Any]:
+    db = get_db()
+    records: list[tuple[str, Optional[dict]]] = []
+    for rid in (req.record_ids or []):
+        art: Optional[dict] = None
+        try:
+            aid = await _resolve_article_id(db, req.search_id, str(rid))
+            if aid:
+                art = await db[Collections.ARTICLES].find_one({"id": aid}, {"_id": 0})
+        except Exception:  # noqa: BLE001
+            logger.exception("verify-citations: resolve failed for record %s", rid)
+        records.append((str(rid), art))
+
+    n = len(records)
+    used = sorted({int(x) for x in _CITATION_MARKER_RE.findall(req.summary_text or "")})
+    citations: list[dict[str, Any]] = []
+    valid_nums: list[int] = []
+    invalid_nums: list[int] = []
+    for num in used:
+        if 1 <= num <= n:
+            rid, art = records[num - 1]
+            art = art or {}
+            citations.append({
+                "index": num,
+                "marker": f"[{num}]",
+                "valid": True,
+                "record_id": rid,
+                "title": art.get("title"),
+                "pmid": art.get("pmid"),
+                "doi": art.get("doi"),
+                "journal": art.get("journal"),
+                "publication_year": art.get("publication_year"),
+            })
+            valid_nums.append(num)
+        else:
+            citations.append({
+                "index": num, "marker": f"[{num}]", "valid": False, "record_id": None,
+            })
+            invalid_nums.append(num)
+
+    return {
+        "search_id": req.search_id,
+        "verified": True,
+        "citations": citations,
+        "valid_citations": valid_nums,
+        "invalid_citations": invalid_nums,
+        # ``stripped_citations`` = markers with no matching record (ungrounded).
+        "stripped_citations": invalid_nums,
+        "record_count": n,
+        "summary_text": req.summary_text,
+    }
