@@ -50,15 +50,28 @@ _STANDALONE_HEADS = (
 )
 
 # Front-strip tokens (stage / grade / biomarker / qualifier / stopwords).
+# The _CANCER_RE window can grab up to 4 words before the cancer head, so a
+# question like "prognosis of colon cancer" is captured as the whole phrase.
+# These leading tokens are peeled off so the anchor is the bare cancer
+# ("colon cancer"). CRITICAL: the prognosis/outcome signal words (prognosis,
+# survival, recurrence, mortality, …) MUST be here — otherwise the cancer is
+# extracted as "prognosis of colon cancer", an unmatchable anchor that caps the
+# entire result pool to zero.
 _STRIP_FRONT = {
     "the", "of", "for", "in", "with", "a", "an", "and", "to", "on", "is",
-    "patients", "patient", "stage", "grade", "risk", "early", "late",
-    "advanced", "localized", "localised", "metastatic", "recurrent",
-    "newly", "diagnosed", "positive", "negative", "her2", "her-2", "her",
-    "er", "pr", "egfr", "braf", "brca", "brca1", "brca2", "kras", "alk",
+    "what", "whats", "patients", "patient", "stage", "grade", "risk", "risks",
+    "early", "late", "advanced", "localized", "localised", "metastatic",
+    "recurrent", "newly", "diagnosed", "positive", "negative", "her2", "her-2",
+    "her", "er", "pr", "egfr", "braf", "brca", "brca1", "brca2", "kras", "alk",
     "pdl1", "pd-l1", "triple", "high", "low", "intermediate", "primary",
     "secondary", "node", "lymph", "stage-", "b", "c",
     "i", "ii", "iii", "iv", "v",
+    # prognosis / natural-history / outcome lead words (see docstring):
+    "prognosis", "prognostic", "prognoses", "prognostication",
+    "survival", "recurrence", "mortality", "death", "rate", "rates",
+    "life", "expectancy", "natural", "history", "outcome", "outcomes",
+    "overall", "progression", "metastasis", "biochemical", "specific",
+    "prevalence", "incidence", "epidemiology",
 }
 
 _ARABIC_TO_ROMAN = {"0": "0", "1": "I", "2": "II", "3": "III", "4": "IV"}
