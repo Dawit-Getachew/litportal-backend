@@ -585,11 +585,24 @@ class ClinicalQuestionParserService:
                     validated.get("clinical_question_type", "other")
                 )
                 # The LLM occasionally folds the question stem into the
-                # population (e.g. "prognosis of colon cancer"); strip it so the
-                # primary anchor is the bare subject and actually matches.
+                # population/intervention (e.g. "prognosis of colon cancer",
+                # "treatment options for stage 4 prostate cancer"); strip it so
+                # the primary anchor is the bare subject and actually matches.
                 validated["population"] = _strip_question_stem(
                     validated.get("population") or ""
                 )
+                validated["intervention_or_exposure"] = _strip_question_stem(
+                    validated.get("intervention_or_exposure") or ""
+                )
+                # A "treatment for X" question has no *specific* intervention —
+                # if the stripped intervention just restates the condition, it
+                # is not a real drug/exposure. Clear it so it can't become a
+                # bogus ``drug_or_drug_class`` anchor that no article matches
+                # (the condition anchor then drives retrieval).
+                _iv = (validated.get("intervention_or_exposure") or "").strip().lower()
+                _pop = (validated.get("population") or "").strip().lower()
+                if _iv and _pop and (_iv == _pop or _iv in _pop or _pop in _iv):
+                    validated["intervention_or_exposure"] = ""
                 validated["rationale"] = (validated.get("rationale") or "") + " | source=llm"
                 # Final Pydantic gate
                 try:

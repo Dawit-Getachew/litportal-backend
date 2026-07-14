@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -1464,10 +1465,48 @@ async def get_session(session_id: str, current_user: dict = Depends(get_current_
         else:
             included.append(row)
 
+    # ---- Graceful "always surface the best available" fallback ----
+    # When strict anchor ranking excluded EVERY retrieved article — typically a
+    # parsing/anchor imperfection such as an over-specific or fused-phrase
+    # anchor ("treatment options for stage 4 prostate cancer") — returning "No
+    # results found" despite having retrieved 200+ real, topically-related
+    # articles is a strictly worse experience than showing the closest matches
+    # (which is what the legacy ClinEvidence build did). Promote the
+    # top-ranked excluded rows into the shown list, flagged so the UI /
+    # transparency panel can label them as broader, lower-confidence matches.
+    # Non-destructive: this only re-partitions THIS GET response; the persisted
+    # exclusion_reason / default-selection state is untouched.
+    broad_fallback_applied = False
+    if not included and excluded:
+        _broad_limit = int(os.environ.get("BROAD_RESULTS_FALLBACK_LIMIT", "25"))
+        _ranked_ex = sorted(
+            excluded,
+            key=lambda r: -float(
+                r.get("overall_rank_score") or r.get("overall_rank") or 0.0
+            ),
+        )
+        _promote = _ranked_ex[:max(1, _broad_limit)]
+        _promoted_marker = set(map(id, _promote))
+        for _row in _promote:
+            _row["broad_fallback"] = True
+            _row["broad_fallback_reason"] = _row.get("exclusion_reason")
+        included = _promote
+        excluded = [r for r in excluded if id(r) not in _promoted_marker]
+        broad_fallback_applied = True
+        logger.info(
+            "broad_results_fallback: session=%s promoted %d of %d excluded "
+            "articles (0 passed strict ranking)",
+            session_id, len(_promote), len(_promote) + len(excluded),
+        )
+
     body = _to_response({**doc, "_session_diagnostics_json": session_diagnostics}).model_dump()
     body["queries"] = queries
     body["articles"] = included
     body["excluded_articles"] = excluded
+    # Signals the UI to show a "no exact matches — showing broader results"
+    # banner instead of an empty state, and to render these cards with a
+    # lower-confidence treatment.
+    body["broad_fallback_applied"] = broad_fallback_applied
     # Phase 5F — surface the context-engine outputs on the GET response
     # so the transparency panel and the testing agent can see them.
     # These keys are not part of the legacy SearchSessionResponse model;
