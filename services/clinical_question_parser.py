@@ -433,7 +433,10 @@ _LLM_SYSTEM = (
     '  "clinical_question_type": one of treatment|diagnosis|prognosis|harm|'
     "screening|prevention|etiology|guideline|epidemiology|pharmacology|other,\n"
     '  "specialty": string,\n'
-    '  "population": string (the P),\n'
+    '  "population": string — the bare patient group or condition ONLY '
+    '(e.g. "colon cancer", "adults with sepsis"). NEVER a descriptive phrase '
+    'about the question such as "diagnostic methods for X", "prognosis of X", '
+    'or "potential causes of X" — put just the condition/patient here,\n'
     '  "intervention_or_exposure": string (the I/E),\n'
     '  "comparator": string (the C),\n'
     '  "outcomes": array of strings (the O),\n'
@@ -482,16 +485,33 @@ _LLM_SCHEMA_HINT: dict[str, Any] = {
 # phrase — which the ranker then caps out, so a perfectly valid question returns
 # zero results. Strip the leading stem so the anchor is the bare clinical
 # subject ("colon cancer"), which the Boolean compiler and MeSH resolver match.
+# Adjectives/qualifiers that can precede the aspect noun in a descriptive lead
+# ("DIAGNOSTIC methods for X", "POTENTIAL causes of X").
+_STEM_ADJ = (
+    r"(?:potential|various|possible|common|main|primary|secondary|underlying|"
+    r"differential|diagnostic|therapeutic|preventive|preventative|clinical|"
+    r"available|current|recommended|optimal|appropriate|effective|best|"
+    r"standard|typical|usual|key|important|relevant|first[-\s]line|"
+    r"second[-\s]line|the)"
+)
+# Aspect nouns that name the QUESTION facet rather than the clinical subject.
+_STEM_NOUN = (
+    r"(?:prognos\w*|diagnos\w*|treatments?|treating|manag\w*|therap(?:y|ies)|"
+    r"prevent\w*|screen\w*|workups?|work[-\s]ups?|evaluations?|assessments?|"
+    r"caus\w*|etiolog\w*|aetiolog\w*|pathophysiolog\w*|epidemiolog\w*|"
+    r"incidence|prevalence|complications?|methods?|methodolog(?:y|ies)|"
+    r"strateg(?:y|ies)|options?|approach(?:es)?|factors?|natural\s+history|"
+    r"outcomes?|survival|mortality|role|risks?)"
+)
+# A leading descriptive stem = [<=3 adjectives] [1-3 aspect nouns] (of|for|...).
+# The LLM often folds one of these into the population/condition ("prognosis of
+# colon cancer", "Diagnostic methods for pulmonary embolism", "Potential causes
+# of CKD"), producing an unmatchable anchor that caps the whole result pool to
+# zero. Stripping it exposes the bare clinical subject.
 _QUESTION_STEM_RE = re.compile(
-    r"^(?:the\s+)?(?:"
-    r"prognoses|prognosis|prognostic\s+factors?|prognostication|"
-    r"diagnosis|differential\s+diagnos(?:is|es)|"
-    r"treatments?|management|therap(?:y|ies)|workups?|work-?up|"
-    r"evaluation|assessment|causes?|etiolog(?:y|ies)|aetiolog(?:y|ies)|"
-    r"pathophysiology|risk\s+factors?|risks?|prevention|screening|"
-    r"incidence|prevalence|epidemiology|complications?|"
-    r"natural\s+history|outcomes?|survival"
-    r")\s+(?:of|for|in)\s+",
+    r"^(?:" + _STEM_ADJ + r"\s+){0,3}"
+    r"(?:" + _STEM_NOUN + r"\s+){1,3}"
+    r"(?:of|for|to|in|with|regarding|about)\s+",
     re.IGNORECASE,
 )
 # Optional leading population framing to peel off before the stem check so a
