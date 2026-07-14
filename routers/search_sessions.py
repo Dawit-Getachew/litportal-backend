@@ -185,6 +185,41 @@ def _to_response(doc: dict) -> SearchSessionResponse:
     )
 
 
+_VALID_SESSION_STATUSES = frozenset({
+    "draft", "blocked_phi", "searching", "ranking", "brokering_access",
+    "fetching_oa_full_text", "awaiting_selection", "awaiting_clinical_subject",
+    "summarizing", "complete", "error",
+})
+
+
+def _minimal_response(doc: dict) -> SearchSessionResponse:
+    """Fallback list entry for a session whose full serialization fails (e.g. a
+    legacy / partially-written ``*_json`` field of the wrong type). Keeps the
+    session visible in history with safe defaults instead of 500-ing the entire
+    list because of one bad doc. Uses only ``.get()`` + coercions so it cannot
+    itself raise for a well-formed-enough doc."""
+    now = datetime.now(timezone.utc)
+    status = doc.get("status")
+    if status not in _VALID_SESSION_STATUSES:
+        status = "error"
+    created = doc.get("created_at") or now
+    cqt = doc.get("clinical_question_type")
+    em = doc.get("error_message")
+    return SearchSessionResponse(
+        id=str(doc.get("id") or ""),
+        user_id=str(doc.get("user_id") or ""),
+        original_question=doc.get("original_question"),
+        sanitized_question=doc.get("sanitized_question"),
+        topic_label=doc.get("topic_label"),
+        clinical_question_type=cqt if isinstance(cqt, str) else None,
+        status=status,
+        created_at=created,
+        updated_at=doc.get("updated_at") or created,
+        expires_at=doc.get("expires_at") or (created + timedelta(days=30)),
+        error_message=em if isinstance(em, str) else None,
+    )
+
+
 @router.post("/")
 async def create_session(
     body: SearchSessionCreate,
@@ -473,7 +508,26 @@ async def list_sessions(
         .sort("created_at", -1)
     )
     docs = await cursor.to_list(length=500)
-    items = [_to_response(d) for d in docs]
+    # Resilient mapping: a single session doc that fails full serialization
+    # (e.g. a legacy / bad-typed ``*_json`` field) must NOT 500 the whole list.
+    # Fall back to a minimal entry and log the offender for follow-up.
+    items: list[SearchSessionResponse] = []
+    for d in docs:
+        try:
+            items.append(_to_response(d))
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "list_sessions: _to_response failed for session id=%s status=%r; "
+                "rendering minimal entry",
+                d.get("id"), d.get("status"),
+            )
+            try:
+                items.append(_minimal_response(d))
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "list_sessions: minimal render also failed for id=%s; skipping",
+                    d.get("id"),
+                )
     if group == "recent":
         buckets: dict[str, list[SearchSessionResponse]] = {
             "today": [], "previous_7_days": [], "previous_30_days": [],
