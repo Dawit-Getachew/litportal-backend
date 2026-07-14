@@ -476,6 +476,52 @@ _LLM_SCHEMA_HINT: dict[str, Any] = {
 }
 
 
+# Question-stem phrases the LLM (or deterministic extractor) sometimes folds
+# INTO the population/condition, e.g. "prognosis of colon cancer". That yields
+# an unmatchable primary anchor — no paper's title/abstract contains the literal
+# phrase — which the ranker then caps out, so a perfectly valid question returns
+# zero results. Strip the leading stem so the anchor is the bare clinical
+# subject ("colon cancer"), which the Boolean compiler and MeSH resolver match.
+_QUESTION_STEM_RE = re.compile(
+    r"^(?:the\s+)?(?:"
+    r"prognoses|prognosis|prognostic\s+factors?|prognostication|"
+    r"diagnosis|differential\s+diagnos(?:is|es)|"
+    r"treatments?|management|therap(?:y|ies)|workups?|work-?up|"
+    r"evaluation|assessment|causes?|etiolog(?:y|ies)|aetiolog(?:y|ies)|"
+    r"pathophysiology|risk\s+factors?|risks?|prevention|screening|"
+    r"incidence|prevalence|epidemiology|complications?|"
+    r"natural\s+history|outcomes?|survival"
+    r")\s+(?:of|for|in)\s+",
+    re.IGNORECASE,
+)
+# Optional leading population framing to peel off before the stem check so a
+# stem buried after it ("patients with prognosis of X") is still exposed.
+_POP_LEAD_RE = re.compile(
+    r"^(?:in\s+)?(?:patients?|adults?|children|people|persons?|individuals?|"
+    r"subjects?)\s+with\s+",
+    re.IGNORECASE,
+)
+
+
+def _strip_question_stem(text: str) -> str:
+    """Remove a leading interrogative stem ("prognosis of", "risk of", ...) that
+    was mistakenly folded into a condition/population string. Idempotent — a
+    no-op when the text is already a bare clinical subject. Preserves an
+    optional "patients with " framing."""
+    t = (text or "").strip()
+    prefix = ""
+    lead = _POP_LEAD_RE.match(t)
+    if lead:
+        prefix = t[:lead.end()]
+        t = t[lead.end():].strip()
+    for _ in range(2):  # handle a rare double stem
+        m = _QUESTION_STEM_RE.match(t)
+        if not m:
+            break
+        t = t[m.end():].strip()
+    return (prefix + t).strip() or (text or "").strip()
+
+
 class ClinicalQuestionParserService:
     async def parse(self, sanitized_question: str) -> dict[str, Any]:
         q_raw = (sanitized_question or "").strip()
@@ -518,6 +564,12 @@ class ClinicalQuestionParserService:
                 validated["clinical_question_type"] = _canonicalize_qtype(
                     validated.get("clinical_question_type", "other")
                 )
+                # The LLM occasionally folds the question stem into the
+                # population (e.g. "prognosis of colon cancer"); strip it so the
+                # primary anchor is the bare subject and actually matches.
+                validated["population"] = _strip_question_stem(
+                    validated.get("population") or ""
+                )
                 validated["rationale"] = (validated.get("rationale") or "") + " | source=llm"
                 # Final Pydantic gate
                 try:
@@ -535,6 +587,7 @@ class ClinicalQuestionParserService:
 
         # Population
         population, _ = _extract_population(q)
+        population = _strip_question_stem(population)
 
         # Diagnostic accuracy short-circuit
         intervention = ""
