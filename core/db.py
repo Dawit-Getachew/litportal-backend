@@ -509,6 +509,13 @@ async def ensure_indexes(db: AsyncIOMotorDatabase | None = None) -> None:
     # had different sparse settings across deploys.
     await _ci(Collections.SEARCH_SESSIONS, "user_id")
     await _ci(Collections.SEARCH_SESSIONS, "expires_at")
+    # History list = filter by user_id + sort by created_at desc. Without this
+    # compound index MongoDB does an IN-MEMORY sort of all the user's (large)
+    # session docs and blows past the 32MB sort cap (code 292) → 500. The index
+    # lets the filter+sort run off the index — no in-memory sort.
+    await _ci(
+        Collections.SEARCH_SESSIONS, [("user_id", 1), ("created_at", -1)],
+    )
     await _ci(Collections.FOLDERS, "user_id")
     await _ci(Collections.FOLDER_ARTICLES, "folder_id")
     await _ci(Collections.SOURCE_CONFIGS, "source_name", unique=True)

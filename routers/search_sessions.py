@@ -9,10 +9,12 @@ call ever sees the raw text.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -218,6 +220,29 @@ def _minimal_response(doc: dict) -> SearchSessionResponse:
         expires_at=doc.get("expires_at") or (created + timedelta(days=30)),
         error_message=em if isinstance(em, str) else None,
     )
+
+
+def _json_safe(obj: Any) -> tuple[Any, int]:
+    """Recursively replace NaN / +-Infinity floats (which Starlette's
+    JSONResponse rejects with ``allow_nan=False`` → 500) with ``None``. A stray
+    NaN buried in a persisted ``*_json`` field (e.g. a score) otherwise 500s the
+    ENTIRE list after the per-doc mapping. Returns (cleaned, replaced_count)."""
+    bad = 0
+
+    def walk(o: Any) -> Any:
+        nonlocal bad
+        if isinstance(o, float):
+            if math.isnan(o) or math.isinf(o):
+                bad += 1
+                return None
+            return o
+        if isinstance(o, dict):
+            return {k: walk(v) for k, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [walk(v) for v in o]
+        return o
+
+    return walk(obj), bad
 
 
 @router.post("/")
@@ -490,6 +515,8 @@ def _bucket(created_at: datetime, now: datetime) -> str:
 @router.get("/")
 async def list_sessions(
     group: Optional[str] = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+    skip: int = Query(default=0, ge=0),
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
@@ -506,16 +533,37 @@ async def list_sessions(
             {"_id": 0},
         )
         .sort("created_at", -1)
+        # Opt into external (disk) sort: session docs carry large embedded
+        # diagnostics JSON, and a user with many sessions otherwise blows past
+        # MongoDB's 32MB in-memory sort cap ("Sort exceeded memory limit ...
+        # did not opt in to external sorting", code 292) → 500 on the whole list.
+        .allow_disk_use(True)
     )
-    docs = await cursor.to_list(length=500)
+    # The flat list honors the caller's pagination (the FE sends limit/skip) so
+    # the response payload stays small; ``group=recent`` needs the full window.
+    fetch_len = 500
+    if group != "recent":
+        if skip:
+            cursor = cursor.skip(skip)
+        cursor = cursor.limit(limit)
+        fetch_len = limit
+    try:
+        docs = await cursor.to_list(length=fetch_len)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "list_sessions: session fetch failed for user=%s", current_user.get("id"),
+        )
+        docs = []
     # Resilient mapping: a single session doc that fails full serialization
     # (e.g. a legacy / bad-typed ``*_json`` field) must NOT 500 the whole list.
-    # Fall back to a minimal entry and log the offender for follow-up.
+    # Fall back to a minimal entry and record the failure kind for diagnostics.
     items: list[SearchSessionResponse] = []
+    degraded: list[str] = []
     for d in docs:
         try:
             items.append(_to_response(d))
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
+            degraded.append(type(exc).__name__)
             logger.exception(
                 "list_sessions: _to_response failed for session id=%s status=%r; "
                 "rendering minimal entry",
@@ -534,8 +582,40 @@ async def list_sessions(
         }
         for it in items:
             buckets[_bucket(it.created_at, now)].append(it)
-        return buckets
-    return items
+        payload: Any = buckets
+    else:
+        payload = items
+    # Final JSON-safety pass. A NaN / Infinity float buried in a persisted
+    # ``*_json`` field (e.g. a score) makes Starlette's JSONResponse
+    # (allow_nan=False) 500 AFTER the per-doc mapping above — so scrub it here.
+    try:
+        safe, nan_count = _json_safe(jsonable_encoder(payload))
+    except Exception as exc:  # noqa: BLE001
+        # Exotic non-serializable value somewhere — fall back to minimal-only.
+        degraded.append("encode:" + type(exc).__name__)
+        logger.exception("list_sessions: payload encoding failed; minimal-only fallback")
+        minimal: list[SearchSessionResponse] = []
+        for d in docs:
+            try:
+                minimal.append(_minimal_response(d))
+            except Exception:  # noqa: BLE001
+                logger.exception("list_sessions: minimal render failed for id=%s", d.get("id"))
+        if group == "recent":
+            mb: dict[str, list[SearchSessionResponse]] = {
+                "today": [], "previous_7_days": [], "previous_30_days": [],
+            }
+            for it in minimal:
+                mb[_bucket(it.created_at, now)].append(it)
+            safe, nan_count = _json_safe(jsonable_encoder(mb))
+        else:
+            safe, nan_count = _json_safe(jsonable_encoder(minimal))
+    if nan_count:
+        degraded.append(f"nan:{nan_count}")
+    resp = JSONResponse(content=safe)
+    if degraded:
+        # Non-fatal diagnostics header (counts / exception kinds only, no PHI).
+        resp.headers["X-List-Degraded"] = ",".join(sorted(set(degraded)))[:200]
+    return resp
 
 
 async def _owned_session(session_id: str, user_id: str) -> dict:
