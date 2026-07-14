@@ -32,6 +32,7 @@ from services.audit import audit_service
 from services.clinical_context_engine import build_clinical_context
 from services.clinical_question_parser import clinical_question_parser
 from services.concept_block_query_builder import concept_block_query_builder
+from services import ai_query_expansion
 from services.query_compiler import boolean_query_compiler
 from services.connectors.openalex import openalex_connector
 from services.deduplication import deduplication
@@ -2867,6 +2868,47 @@ async def run_pipeline(
             "compiler_yielded_no_queries_sources": [],
         }
         compiler_query_counts_by_source: dict[str, int] = {s: 0 for s in sources}
+
+        # ---- AI clinical-synonym expansion (default-OFF; see
+        #      services/ai_query_expansion). Broaden the primary anchor(s) into a
+        #      controlled-vocabulary OR-group ("stage 4 prostate cancer" ->
+        #      prostate cancer / metastatic / advanced / stage IV / CRPC / mCRPC)
+        #      so an over-specific or staged phrase still retrieves the right
+        #      papers. Terms ride as OR-within-concept ``synonyms`` that the
+        #      builder already expands; AND-across-concept gating preserves
+        #      precision. Fully gated by AI_QUERY_EXPANSION_ENABLED. ----
+        if (picott_payload and picott_payload.get("must_have_concepts")
+                and ai_query_expansion.is_enabled()):
+            try:
+                _expand_roles = {"condition", "population", "intervention", "exposure"}
+                _expanded = 0
+                for _mh in picott_payload["must_have_concepts"]:
+                    if _expanded >= 3:
+                        break
+                    if not isinstance(_mh, dict):
+                        continue
+                    if (_mh.get("role") or "").lower() not in _expand_roles:
+                        continue
+                    _new = await ai_query_expansion.expand_concept_synonyms(
+                        _mh.get("concept") or ""
+                    )
+                    if _new:
+                        _have = {
+                            s.strip().lower()
+                            for s in (_mh.get("synonyms") or [])
+                            if isinstance(s, str)
+                        }
+                        _mh["synonyms"] = list(_mh.get("synonyms") or []) + [
+                            s for s in _new if s.strip().lower() not in _have
+                        ]
+                        _expanded += 1
+                if _expanded:
+                    logger.info(
+                        "ai_query_expansion: expanded %d anchor concept(s) session=%s",
+                        _expanded, session_id,
+                    )
+            except Exception:  # noqa: BLE001
+                logger.exception("ai_query_expansion failed (non-fatal)")
 
         if picott_payload and picott_payload.get("must_have_concepts"):
             with diag.stage("boolean_query_compilation"):
