@@ -465,8 +465,74 @@ def _humanize_inclusion(eligible_entry: dict, picott: dict | None) -> str:
     )
 
 
+def recount_summary_after_rescue(
+    summary: dict[str, Any] | None,
+    ranked: list[dict],
+) -> dict[str, Any]:
+    """Recompute the dynamic counts in a persisted ``default_selection_summary``
+    after the LLM rescue re-add pass mutated ``ranked`` (rows carrying
+    ``llm_rescued=True`` had their soft ``exclusion_reason`` cleared and
+    ``included_by_default`` set).
+
+    Pure — returns a NEW dict, never mutates the input. A no-op (returns the
+    summary unchanged) when no row was rescued. The per-reason decrements use
+    ``_exclusion_reason_for``, which still reflects the row's cap/relevance
+    state after ``exclusion_reason`` was cleared (it reads cap_reasons /
+    relevance_score, not the SSA exclusion_reason), so the closed-set keys line
+    up with the ones ``select_default_articles`` originally emitted.
+    """
+    rescued = [r for r in (ranked or []) if r.get("llm_rescued")]
+    if not rescued:
+        return summary or {}
+
+    out = dict(summary or {})
+    excl = dict(out.get("excluded_rationale_summary") or {})
+    low_rel = int(out.get("excluded_by_low_relevance_count") or 0)
+    by_cap = int(out.get("excluded_by_cap_count") or 0)
+
+    for r in rescued:
+        reason = _exclusion_reason_for(r)
+        if reason and excl.get(reason):
+            excl[reason] -= 1
+            if excl[reason] <= 0:
+                excl.pop(reason, None)
+        if reason == "relevance_below_60":
+            low_rel = max(0, low_rel - 1)
+        elif reason and (
+            reason.startswith("cap_reason_") or reason == "negative_concept_fired"
+        ):
+            by_cap = max(0, by_cap - 1)
+
+    selected_ids = [
+        (r.get("_article") or {}).get("id")
+        for r in ranked
+        if r.get("included_by_default")
+    ]
+    selected_ids = [s for s in selected_ids if s]
+
+    # Append a closed-set rationale for each rescued id not already listed.
+    reason_each = list(out.get("reason_each_selected") or [])
+    listed = {x.get("article_id") for x in reason_each}
+    for r in rescued:
+        aid = (r.get("_article") or {}).get("id")
+        if aid and aid not in listed and r.get("included_by_default"):
+            reason_each.append({"article_id": aid, "reason": "llm_rescued"})
+
+    out["selected_article_ids"] = selected_ids
+    out["selected_count"] = len(selected_ids)
+    out["excluded_rationale_summary"] = excl
+    out["excluded_count"] = sum(excl.values())
+    out["excluded_by_low_relevance_count"] = low_rel
+    out["excluded_by_cap_count"] = by_cap
+    out["reason_each_selected"] = reason_each
+    out["selected_by_lane"] = {"primary": len(selected_ids)}
+    out["llm_rescued_count"] = len(rescued)
+    return out
+
+
 __all__ = [
     "DEFAULT_MAX_COUNT",
     "EXCLUSION_REASONS",
     "select_default_articles",
+    "recount_summary_after_rescue",
 ]

@@ -1477,7 +1477,12 @@ async def get_session(session_id: str, current_user: dict = Depends(get_current_
     # Non-destructive: this only re-partitions THIS GET response; the persisted
     # exclusion_reason / default-selection state is untouched.
     broad_fallback_applied = False
-    if not included and excluded:
+    # Fire when the shown set is too thin. Default threshold 0 preserves the
+    # original "only when nothing passed strict ranking" behavior; raising
+    # BROAD_RESULTS_FALLBACK_MIN_INCLUDED widens it to the "only 1-2 papers"
+    # case as a deterministic, no-LLM floor.
+    _min_included = int(os.environ.get("BROAD_RESULTS_FALLBACK_MIN_INCLUDED", "0") or "0")
+    if excluded and len(included) <= _min_included:
         _broad_limit = int(os.environ.get("BROAD_RESULTS_FALLBACK_LIMIT", "25"))
         _ranked_ex = sorted(
             excluded,
@@ -1490,13 +1495,17 @@ async def get_session(session_id: str, current_user: dict = Depends(get_current_
         for _row in _promote:
             _row["broad_fallback"] = True
             _row["broad_fallback_reason"] = _row.get("exclusion_reason")
-        included = _promote
+        # APPEND (not replace) so any real included rows are preserved when the
+        # threshold is >0. When included was empty this is identical to the
+        # original ``included = _promote``. Promoted broader/lower-confidence
+        # rows go after the strict matches.
+        included = included + _promote
         excluded = [r for r in excluded if id(r) not in _promoted_marker]
         broad_fallback_applied = True
         logger.info(
-            "broad_results_fallback: session=%s promoted %d of %d excluded "
-            "articles (0 passed strict ranking)",
-            session_id, len(_promote), len(_promote) + len(excluded),
+            "broad_results_fallback: session=%s promoted %d excluded articles "
+            "(shown set had %d, threshold %d)",
+            session_id, len(_promote), len(included) - len(_promote), _min_included,
         )
 
     body = _to_response({**doc, "_session_diagnostics_json": session_diagnostics}).model_dump()

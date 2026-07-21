@@ -199,6 +199,44 @@ class Settings:
     MIN_AI_SURFACING_CONFIDENCE: float = _float("MIN_AI_SURFACING_CONFIDENCE", 0.65)
     MIN_RANKER_OPTIMIZATION_CONFIDENCE: float = _float("MIN_RANKER_OPTIMIZATION_CONFIDENCE", 0.65)
 
+    # Agent 3b — rescued-article RE-ADD. Promotes the evidence-curator recheck
+    # from an advisory shelf to an ACTUAL re-inclusion in the returned list:
+    # reviews the deterministically-rejected (soft-excluded) candidates with one
+    # batched LLM call and re-adds high-confidence direct matches, fixing the
+    # "search returns only ~1 paper" symptom. Retracted/preprint/unsafe/
+    # non-article are NEVER eligible (blocked in _collect_candidates before the
+    # LLM sees them); only 'direct_candidate' rows above MIN_CONFIDENCE that also
+    # pass a central-anchor (correct-disease) guard are re-added, bounded by
+    # MAX_ADDS. Ships ENABLED BY DEFAULT (incl. production) so no deployment env
+    # var is required; set AI_RESCUE_READD_ENABLED=false to turn it off. It is
+    # still a safe no-op when the LLM provider is unconfigured (llm_provider
+    # gate) — in that case the deterministic BROAD_RESULTS_FALLBACK floor below
+    # is the guaranteed net.
+    AI_RESCUE_READD_ENABLED: bool = _bool("AI_RESCUE_READD_ENABLED", True)
+    AI_RESCUE_READD_PROD_ALLOWED: bool = _bool("AI_RESCUE_READD_PROD_ALLOWED", True)
+    # Stricter than surfacing's 0.65 because this changes the returned list.
+    AI_RESCUE_READD_MIN_CONFIDENCE: float = _float("AI_RESCUE_READD_MIN_CONFIDENCE", 0.75)
+    AI_RESCUE_READD_MAX_CANDIDATES: int = _int("AI_RESCUE_READD_MAX_CANDIDATES", 30)
+    AI_RESCUE_READD_MAX_ADDS: int = _int("AI_RESCUE_READD_MAX_ADDS", 15)
+    # Pre-check re-added papers (included_by_default=True) vs surface-only.
+    AI_RESCUE_READD_AUTOCHECK: bool = _bool("AI_RESCUE_READD_AUTOCHECK", True)
+    # Skip the LLM call when the strict pipeline already produced at least this
+    # many shown (non-excluded) rows. 0 == always run (every search).
+    AI_RESCUE_READD_SKIP_IF_INCLUDED_ATLEAST: int = _int(
+        "AI_RESCUE_READD_SKIP_IF_INCLUDED_ATLEAST", 0,
+    )
+
+    # Optional deterministic, no-LLM floor for the "only 1 paper" case: fire the
+    # GET broad-fallback when the shown set is <= N (promotes top excluded rows,
+    # UI-labeled as broader/lower-confidence). Defaults to 0 (fallback only when
+    # NOTHING is shown — today's behavior) so it never over-promotes lower-
+    # confidence rows; the confidence-guarded LLM rescue above is the primary,
+    # accuracy-preserving default. Raise to e.g. 3 for a guaranteed handful even
+    # when the LLM provider is unconfigured.
+    BROAD_RESULTS_FALLBACK_MIN_INCLUDED: int = _int(
+        "BROAD_RESULTS_FALLBACK_MIN_INCLUDED", 0,
+    )
+
     # -------------------------------------------------------------------
     # B15 — single-paper full-text finder/import. Powers the LitPulse
     # "Full text import" button: given a PMID / DOI / title for ONE paper,

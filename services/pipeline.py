@@ -38,6 +38,7 @@ from services.connectors.openalex import openalex_connector
 from services.deduplication import deduplication
 from services.default_selection import (
     select_default_articles,
+    recount_summary_after_rescue,
     _exclusion_reason_for,
 )
 from services.evidence_ranker import evidence_ranker
@@ -74,6 +75,7 @@ from services.retrieval_quality_evaluator import retrieval_quality_evaluator
 from services.safety_filter import safety_filter
 from services.scholar_like_expansion import expansion_mode, scholar_like_expansion
 from services.search_planning import search_planning
+from services import recall_supplement
 from services.semantic_reranker import semantic_reranker
 
 logger = logging.getLogger("clinevidence.pipeline")
@@ -3399,6 +3401,101 @@ async def run_pipeline(
         with diag.stage("deduplication"):
             unique_articles, qmap = deduplication.dedupe(norm_pairs_for_dedup)
 
+        # ---- Thin-pool supplemental retrieval (additive recall) ----
+        # When the deduped candidate pool is small even after the boolean
+        # compiler + per-source legacy fallback, an over-specific PICOTT/anchor
+        # set has starved retrieval. Run ONE broadened legacy-planner round for
+        # the sources that weren't already broadened and merge + re-dedupe, so
+        # the extra candidates flow through the SAME downstream guardrails
+        # (OpenAlex enrich → safety filter → PICOTT anchor caps → ranking →
+        # default-selection → rescue re-add). Strictly additive: dedupe collapses
+        # overlaps and the anchor caps still gate what can rank/show, so this
+        # never lowers precision — it only gives thin searches more to work with.
+        # Default-ON (no deployment env needed); THIN_POOL_SUPPLEMENT_ENABLED=false
+        # disables it. Non-fatal: any failure leaves the original pool intact.
+        _thin_enabled, _thin_min = recall_supplement.thin_pool_settings()
+        if recall_supplement.should_supplement(
+            len(unique_articles), enabled=_thin_enabled, min_pool=_thin_min
+        ):
+            _broaden_sources = recall_supplement.sources_to_broaden(sources, fallback_sources)
+            if _broaden_sources:
+                try:
+                    supp_plans = search_planning.plan(parsed, sources=_broaden_sources)
+                    supp_by_source: dict[str, list[dict[str, Any]]] = {
+                        s: [] for s in _broaden_sources
+                    }
+                    for p in supp_plans:
+                        if p.source not in supp_by_source:
+                            continue
+                        supp_by_source[p.source].append(
+                            {"query_type": p.query_type, "query_string": p.query_string}
+                        )
+                        await db[Collections.SEARCH_QUERIES].insert_one({
+                            "id": uuid.uuid4().hex,
+                            "search_session_id": session_id,
+                            "source": p.source,
+                            "query_type": p.query_type,
+                            "query_family": p.query_type,
+                            "query_string": p.query_string,
+                            "rationale": p.rationale,
+                            "concept_blocks_used_json": {},
+                            "mandatory_anchors_json": [],
+                            "optional_blocks_json": [],
+                            "role_weights_json": role_weights_json,
+                            "planner_source": "thin_pool_supplement",
+                            "is_primary_strategy": False,
+                            "is_fallback_strategy": True,
+                            "fallback_reason": "thin_pool_supplement",
+                            "created_at": datetime.now(timezone.utc),
+                        })
+                    supp_results = await asyncio.gather(
+                        *[_retrieve(s, supp_by_source[s]) for s in _broaden_sources]
+                    )
+                    # Normalize supplemental pairs exactly like the main loop.
+                    supp_norm_pairs: list[tuple[str, dict[str, Any]]] = []
+                    for src, pairs in supp_results:
+                        for qtype, raw in pairs:
+                            if src == "europe_pmc":
+                                try:
+                                    art = metadata_normalizer.normalize(raw)
+                                except Exception:  # noqa: BLE001
+                                    continue
+                                art["_retrieved_by"] = "europe_pmc"
+                            else:
+                                art = raw
+                                if not art.get("_retrieved_by"):
+                                    art["_retrieved_by"] = src
+                            art.setdefault("sources_present", [])
+                            if src not in art["sources_present"]:
+                                art["sources_present"].append(src)
+                            supp_norm_pairs.append((qtype, art))
+                    if supp_norm_pairs:
+                        _pool_before = len(unique_articles)
+                        # Re-dedupe the combined set (not wrapped in the timed
+                        # ``deduplication`` stage again to keep the closed-set
+                        # stage timings single-entry).
+                        unique_articles, qmap = deduplication.dedupe(
+                            norm_pairs_for_dedup + supp_norm_pairs
+                        )
+                        logger.info(
+                            "thin_pool_supplement: session=%s pool %d -> %d "
+                            "(broadened %s)",
+                            session_id, _pool_before, len(unique_articles), _broaden_sources,
+                        )
+                        await audit_service.log(
+                            "thin_pool_supplement",
+                            user_id=user_id, search_session_id=session_id,
+                            payload={
+                                "pool_before": _pool_before,
+                                "pool_after": len(unique_articles),
+                                "broaden_sources": _broaden_sources,
+                                "min_pool": _thin_min,
+                                "supplemental_queries": len(supp_plans),
+                            },
+                        )
+                except Exception:  # noqa: BLE001
+                    logger.exception("thin_pool_supplement failed (non-fatal)")
+
         # ---- OpenAlex enrichment (after dedup, metadata-only) ----
         oa_stats: dict[str, Any] = {
             "attempted": 0, "applied": 0, "status": "disabled",
@@ -3974,6 +4071,40 @@ async def run_pipeline(
                              {x["_article"]["id"] for x in new_top}]
                 ranked = new_top + displaced + ranked_tail
 
+        # AI Agent 3b — rescued-article RE-ADD (flag-gated, default OFF).
+        # Reviews the deterministically-rejected (soft-excluded) candidates with
+        # ONE batched LLM call and, for high-confidence direct matches that pass
+        # a central-anchor guard, re-adds them by clearing the soft
+        # exclusion_reason on the ranked row IN PLACE — so the paper flows into
+        # the SSA rows built just below with zero read-side/API change. This runs
+        # BEFORE the SSA build on purpose; the advisory maybe_curate_evidence()
+        # call further down runs AFTER the insert and can only shelve. The
+        # function self-guards on the flag + prod opt-in and never raises.
+        try:
+            from agents.evidence_curator import maybe_rescue_readd
+            await maybe_rescue_readd(
+                session_id, user_id, sanitized_question, ranked, picott_payload,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("ai_rescue_readd hook failed (non-fatal)")
+
+        # If the rescue re-added any rows, recompute the persisted
+        # default_selection_summary so selected/excluded counts (first written
+        # above, pre-rescue) reflect the re-added papers instead of undercounting
+        # them. No-op + no extra write when nothing was rescued.
+        if any(r.get("llm_rescued") for r in ranked):
+            ds_summary = recount_summary_after_rescue(ds_summary, ranked)
+            try:
+                await db[Collections.SEARCH_SESSIONS].update_one(
+                    {"id": session_id},
+                    {"$set": {
+                        "default_selection_summary": ds_summary,
+                        "updated_at": datetime.now(timezone.utc),
+                    }},
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("ai_rescue_readd summary recount persist failed (non-fatal)")
+
         _ssa_rows: list[dict[str, Any]] = []
         for r in ranked:
             art = r["_article"]
@@ -4047,6 +4178,10 @@ async def run_pipeline(
                 "candidate_sources_json": candidate_sources,
                 # Phase 5D.1 — default-selection module rationale.
                 "default_selection_rationale": r.get("default_selection_rationale"),
+                # Agent 3b — provenance: True when this row was re-added by the
+                # LLM rescue re-add pass (soft exclusion cleared). Additive;
+                # the frontend ignores unknown fields.
+                "llm_rescued": bool(r.get("llm_rescued")),
                 "user_override_included": False,
                 "user_override_acknowledged_at": None,
                 "user_override_warning": None,
