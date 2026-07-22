@@ -212,7 +212,11 @@ class Settings:
     # still a safe no-op when the LLM provider is unconfigured (llm_provider
     # gate) — in that case the deterministic BROAD_RESULTS_FALLBACK floor below
     # is the guaranteed net.
-    AI_RESCUE_READD_ENABLED: bool = _bool("AI_RESCUE_READD_ENABLED", True)
+    # Superseded by the LLM relevance rescorer (services/llm_rescorer.py), which
+    # runs BEFORE default-selection and boosts relevance for genuinely-relevant
+    # excluded papers. Default-OFF now to avoid a second, redundant LLM pass;
+    # set AI_RESCUE_READD_ENABLED=true to re-enable the older mop-up path.
+    AI_RESCUE_READD_ENABLED: bool = _bool("AI_RESCUE_READD_ENABLED", False)
     AI_RESCUE_READD_PROD_ALLOWED: bool = _bool("AI_RESCUE_READD_PROD_ALLOWED", True)
     # Stricter than surfacing's 0.65 because this changes the returned list.
     AI_RESCUE_READD_MIN_CONFIDENCE: float = _float("AI_RESCUE_READD_MIN_CONFIDENCE", 0.75)

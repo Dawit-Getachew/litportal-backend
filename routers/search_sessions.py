@@ -1481,9 +1481,9 @@ async def get_session(session_id: str, current_user: dict = Depends(get_current_
     # original "only when nothing passed strict ranking" behavior; raising
     # BROAD_RESULTS_FALLBACK_MIN_INCLUDED widens it to the "only 1-2 papers"
     # case as a deterministic, no-LLM floor.
-    _min_included = int(os.environ.get("BROAD_RESULTS_FALLBACK_MIN_INCLUDED", "0") or "0")
+    _min_included = int(os.environ.get("BROAD_RESULTS_FALLBACK_MIN_INCLUDED", "20") or "20")
     if excluded and len(included) <= _min_included:
-        _broad_limit = int(os.environ.get("BROAD_RESULTS_FALLBACK_LIMIT", "25"))
+        _broad_limit = int(os.environ.get("BROAD_RESULTS_FALLBACK_LIMIT", "50"))
         _ranked_ex = sorted(
             excluded,
             key=lambda r: -float(

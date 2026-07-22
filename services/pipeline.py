@@ -3884,6 +3884,20 @@ async def run_pipeline(
             )
         ranked = _deduped_ranked
 
+        # LLM relevance rescorer — the deterministic keyword scorer excludes
+        # everything < 60, which drops genuinely-relevant papers that phrase
+        # concepts differently (200 retrieved → a handful shown). Ask an LLM to
+        # judge the excluded candidates and LIFT the ones it rates relevant
+        # (boosts relevance_score + overall_rank_score, clears the
+        # low_relevance exclusion) BEFORE default-selection runs, so lifted
+        # papers are both shown AND eligible for selection. Flag-gated (default
+        # ON), one batched call, fail-closed.
+        try:
+            from services.llm_rescorer import maybe_llm_rescore
+            await maybe_llm_rescore(session_id, user_id, sanitized_question, ranked)
+        except Exception:  # noqa: BLE001
+            logger.exception("llm_rescorer hook failed (non-fatal)")
+
         # Phase 5D.1 — default-selection module is the single source of
         # truth for ``included_by_default``. The PICOTT ranker already
         # populated cap_reasons / penalty_concepts on each row; we feed

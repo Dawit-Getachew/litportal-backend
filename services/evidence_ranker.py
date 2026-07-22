@@ -11,9 +11,23 @@ Full-text:
 """
 from __future__ import annotations
 
+import os
 import re
 from datetime import datetime
 from typing import Any
+
+from services.relevance_terms import concept_term_set
+
+
+def _relevance_use_picott_synonyms() -> bool:
+    """Match articles against the FULL PICOTT synonym set (drug-class members,
+    MeSH descriptors, acronyms) instead of only the sparse top-level
+    ``parsed.synonyms``. Fixes on-topic papers scoring <60 and being excluded
+    just because they phrase the concept differently. Default-ON; set
+    RELEVANCE_USE_PICOTT_SYNONYMS=false to restore the old sparse matching."""
+    return os.environ.get("RELEVANCE_USE_PICOTT_SYNONYMS", "true").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
 
 # Per-question-type design weights → score for each article_type_classification.
 _DESIGN_TABLE: dict[str, dict[str, int]] = {
@@ -123,18 +137,28 @@ def _relevance(article: dict[str, Any], parsed: dict[str, Any], qtypes: list[str
     title = article.get("title") or ""
     abstract = article.get("abstract") or ""
     key = parsed.get("key_concepts") or []
-    mesh = parsed.get("mesh_terms") or []
-    syn = parsed.get("synonyms") or []
-    drugs = parsed.get("drug_names_and_classes") or []
     intervention = (parsed.get("intervention_or_exposure") or "").lower()
     comparator = (parsed.get("comparator") or "").lower()
+
+    # Concept-match term set. Enriched with the FULL PICOTT synonym set so that
+    # papers phrasing the concept differently (GLP-1RA / semaglutide / NSTEMI …)
+    # are matched and scored — the old sparse ``mesh + syn + drugs`` list caused
+    # on-topic papers to score <60 and be excluded.
+    if _relevance_use_picott_synonyms():
+        concept_terms = concept_term_set(parsed)
+    else:
+        concept_terms = (
+            (parsed.get("mesh_terms") or [])
+            + (parsed.get("synonyms") or [])
+            + (parsed.get("drug_names_and_classes") or [])
+        )
 
     # Hit counts (scaled so a well-matched article saturates near 100).
     score = 0
     score += 10 * _hits(title, key)
     score += 5 * _hits(abstract, key)
-    score += 6 * _hits(title, mesh + syn + drugs)
-    score += 3 * _hits(abstract, mesh + syn + drugs)
+    score += 6 * _hits(title, concept_terms)
+    score += 3 * _hits(abstract, concept_terms)
 
     # Query-variant boost
     if "high_precision" in qtypes:
