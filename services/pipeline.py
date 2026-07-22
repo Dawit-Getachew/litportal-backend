@@ -76,6 +76,7 @@ from services.safety_filter import safety_filter
 from services.scholar_like_expansion import expansion_mode, scholar_like_expansion
 from services.search_planning import search_planning
 from services import recall_supplement
+from services import anchor_dedup
 from services.semantic_reranker import semantic_reranker
 
 logger = logging.getLogger("clinevidence.pipeline")
@@ -1837,9 +1838,33 @@ async def run_pipeline(
                                     "required_for_high_relevance": True,
                                 })
                                 existing_concepts.add(c.lower())
+                        # Term-sets of the anchors already present, so we can
+                        # collapse resolver concepts that are just a narrower
+                        # duplicate of an existing anchor (e.g. parent molecule
+                        # "Glucagon-Like Peptide 1" vs drug class "GLP-1 receptor
+                        # agonists") instead of adding them as a THIRD required
+                        # anchor that wrongly caps on-topic articles.
+                        _dedup_on = anchor_dedup.anchor_dedup_enabled()
+                        _existing_termsets = [
+                            [m.get("concept") or ""] + list(m.get("synonyms") or [])
+                            for m in merged_must_have if isinstance(m, dict)
+                        ] + [
+                            [a.get("canonical_concept") or a.get("text") or ""]
+                            + list(a.get("synonyms") or [])
+                            for a in new_anchors
+                        ]
                         for mh in decision.output.must_have_concepts:
                             c = (mh.concept or "").strip()
                             if not c or c.lower() in existing_concepts:
+                                continue
+                            # Skip a resolver concept that is a redundant
+                            # duplicate of an anchor already present — it would
+                            # otherwise become a hard anchor and reject relevant
+                            # papers for "missing" it.
+                            if _dedup_on and anchor_dedup.concept_is_redundant(
+                                c, _existing_termsets
+                            ):
+                                existing_concepts.add(c.lower())
                                 continue
                             merged_must_have.append({
                                 "concept": c,
@@ -1850,6 +1875,7 @@ async def run_pipeline(
                                 ),
                             })
                             existing_concepts.add(c.lower())
+                            _existing_termsets.append([c])
                         picott_payload["must_have_concepts"] = merged_must_have
                         # Surface resolver-sourced top-level fields.
                         if decision.output.question_subtype:

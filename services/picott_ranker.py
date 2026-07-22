@@ -29,6 +29,7 @@ caps are still hard ceilings — OA boosts cannot exceed them.
 """
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -215,6 +216,21 @@ class _ConceptCheck:
     cap_reasons: list[str]
 
 
+def _soft_anchor_noncapping_enabled() -> bool:
+    """Resolver-injected supplementary concepts land with role ``"other"`` (e.g.
+    the parent molecule "Glucagon-Like Peptide 1" merged in alongside the real
+    "GLP-1 receptor agonists" intervention anchor). Such a concept is a RANKING
+    signal only — its absence must never hard-cap an otherwise on-topic article
+    (that wrongly rejected relevant GLP-1/ACS papers with a bare
+    "Cap 30 (no_specific_reason) · Missing required concept(s): Glucagon-Like
+    Peptide 1"). Genuine anchors (intervention / condition / population /
+    index_test) still cap. Default-ON; set PICOTT_SOFT_ANCHOR_NONCAPPING=false
+    to restore the old every-must-have-caps behavior."""
+    return os.environ.get("PICOTT_SOFT_ANCHOR_NONCAPPING", "true").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+
+
 def _check_concepts(
     title: str,
     abstract: str,
@@ -257,6 +273,12 @@ def _check_concepts(
             matched_must.append(concept)
             role_to_present[role] = True
         else:
+            # Soft anchors (role "other") are resolver-injected supplementary /
+            # redundant concepts (e.g. a drug's parent molecule alongside its
+            # drug-class anchor). Their absence is ranking-only — it must never
+            # hard-cap. Genuine anchors below still cap exactly as before.
+            if role == "other" and _soft_anchor_noncapping_enabled():
+                continue
             missing_must.append(concept)
             if anchor_cap < cap:
                 cap = anchor_cap
