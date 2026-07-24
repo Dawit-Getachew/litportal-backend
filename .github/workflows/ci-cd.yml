@@ -1,0 +1,85 @@
+name: "[App] CI/CD"
+
+on:
+  push:
+    # `feat/aws` added TEMPORARILY (2026-07-23) so pushes while this branch
+    # is under active development auto-run the full pipeline (including a
+    # real deploy) instead of needing a manual workflow_dispatch every time
+    # -- see the `deploy-branch` override below, which this must stay in
+    # sync with. Remove `feat/aws` from this list in the same change that
+    # removes that override, once the branch merges or the test is done.
+    branches: [main, feat/aws]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy-branch:
+        description: 'Branch to treat as the trusted push/deploy branch for this manual run -- must match a branch AppDeployRole-litportal-backend actually trusts (src/github-deploy-roles-stack.ts TEMP_TEST_BRANCHES in scienthesis-cdk). Does NOT change which branch the workflow itself runs from -- that is still whatever ref/branch you pick in the "Use workflow from" dropdown when dispatching. Left as "feat/aws" by default to match the temporary override below; override here (e.g. back to "main") for a one-off manual run without editing this file.'
+        required: false
+        type: string
+        default: feat/aws
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-cd:
+    # Shared pipeline logic (lint -> test -> build -> Trivy scan -> push to
+    # ECR -> register task-def revision -> ecs update-service -> wait for
+    # stable) lives in scienthesis-cdk, the infra repo, so it only needs to
+    # change in one place for all 4 Scienthesis backend services. See that
+    # file's own header comment for the full design rationale, including
+    # exactly which IAM permissions this relies on and which branch(es) it
+    # will actually push/deploy from (`deploy-branch` input, default "main").
+    #
+    # `permissions` here is required, not optional -- a reusable workflow's
+    # nested jobs can never be granted MORE than the calling job itself has.
+    # app-deploy.yml's build-scan-push/deploy jobs both request
+    # `id-token: write` for the OIDC AssumeRoleWithWebIdentity call; without
+    # this block the caller job defaults to `id-token: none`, and every real
+    # deploy fails closed with "requesting 'id-token: write', but is only
+    # allowed 'id-token: none'" regardless of what app-deploy.yml itself
+    # declares. Found and fixed 2026-07-23 while testing
+    # scienthesis-identity's pipeline -- applied here too since none of the 4
+    # app repos had ever run a real Actions-triggered deploy before that, so
+    # this gap hadn't surfaced yet in any of them.
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/app-deploy.yml@main
+    with:
+      service-name: litportal-backend
+      # AppDeployRoleArn-litportal-backend output from the GithubDeployRoles-prod
+      # stack (fetched read-only 2026-07-22). Not a secret -- see
+      # app-deploy.yml's `deploy-role-arn` input doc comment.
+      deploy-role-arn: arn:aws:iam::217794632783:role/GithubDeployRoles-prod-AppDeployRolelitportalbacken-kb7ySIYIZgUF
+      # requirements.txt (not pyproject.toml/uv.lock) -- installs straight
+      # into the runner's system Python; matches how the Dockerfile's
+      # builder stage installs deps, just without the venv since this
+      # runner is thrown away after the job.
+      install-command: "uv pip install --system -r requirements.txt"
+      # ruff + black + mypy are already dev deps in requirements.txt
+      # (confirmed 2026-07-22) -- adjust here if that tooling ever changes,
+      # no need to touch the shared workflow.
+      lint-command: "ruff check . && black --check . && mypy ."
+      test-command: "pytest"
+      # TEMPORARY (added 2026-07-23) -- lets Lisandro test this service's
+      # real build/scan/push/deploy pipeline against `feat/aws` before it
+      # merges to main, same as scienthesis-identity/scienthesis-lithub.
+      # Only works because AppDeployRole-litportal-backend now also trusts
+      # `feat/aws` (TEMP_TEST_BRANCHES in
+      # scienthesis-cdk/src/github-deploy-roles-stack.ts) -- the two must
+      # stay in sync. Revert this to match the default ("main", i.e. remove
+      # the override entirely) once `feat/aws` merges or the test is done --
+      # don't leave prod pointed at a feature branch.
+      #
+      # `github.event.inputs.deploy-branch` is only ever populated on a
+      # manual `workflow_dispatch` run (the `push`/`pull_request` triggers
+      # above don't set it), so this falls back to the hardcoded "feat/aws"
+      # for every automatic push -- the `|| 'feat/aws'` isn't a generic
+      # default, it's this same temporary value duplicated so both trigger
+      # paths agree. The workflow_dispatch input just gives a way to
+      # override it for a one-off manual run (e.g. dispatch with
+      # deploy-branch=main to sanity-check the normal path still works)
+      # without editing this file.
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
