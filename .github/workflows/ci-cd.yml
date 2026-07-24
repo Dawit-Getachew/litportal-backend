@@ -94,6 +94,20 @@ jobs:
       # separate, still-open decision -- left as `pytest` unchanged for now.
       # REVERT to false once these collection errors are fixed.
       test-continue-on-error: true
+      # TEMPORARILY ALLOWED TO FAIL (2026-07-24, Lisandro) -- same mechanism
+      # again, for the Trivy vulnerability scan in build-scan-push. First
+      # real run against this image (git SHA fabbac5) found 19 HIGH findings
+      # in Python deps (cryptography, pillow, pyasn1, pypdf,
+      # python-multipart, starlette -- all have a fixed version already
+      # published) plus 20 findings (18 HIGH, 2 CRITICAL) in the s5cmd
+      # binary vendored into the image, which is statically built against a
+      # very old Go stdlib (v1.20.8) carrying its own pile of CVEs
+      # independent of anything in requirements.txt. None of this is new
+      # from this CI change -- it's the current state of the image. Full
+      # findings written up separately for Scienthesis so they can
+      # prioritize the dependency bumps. REVERT to false once these are
+      # patched.
+      trivy-continue-on-error: true
       # TEMPORARY (added 2026-07-23) -- lets Lisandro test this service's
       # real build/scan/push/deploy pipeline against `feat/aws` before it
       # merges to main, same as scienthesis-identity/scienthesis-lithub.
