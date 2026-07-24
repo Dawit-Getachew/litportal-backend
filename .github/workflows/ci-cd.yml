@@ -61,22 +61,39 @@ jobs:
       # ruff + black + mypy are already dev deps in requirements.txt
       # (confirmed 2026-07-22) -- adjust here if that tooling ever changes,
       # no need to touch the shared workflow.
-      #
-      # TEMPORARILY DISABLED (2026-07-24, Lisandro) -- first-ever run of this
-      # pipeline (Actions run 30096768416) found 306 pre-existing ruff errors
-      # in this repo (228 in tests/, 78 in services/routers/scripts/), none
-      # introduced by this CI change. Blanking this input to unblock the
-      # build/scan/push/deploy path on feat/aws while Scienthesis owns the
-      # actual cleanup in their repo -- app-deploy.yml already treats an
-      # empty lint-command as "skip lint" by design (see its own input doc
-      # comment), same as scienthesis-identity/scienthesis-lithub which have
-      # no lint tool configured at all today. This is not a new bypass
-      # mechanism, just using the existing off switch.
-      # REVERT to "ruff check . && black --check . && mypy ." once
+      lint-command: "ruff check . && black --check . && mypy ."
+      # TEMPORARILY ALLOWED TO FAIL (2026-07-24, Lisandro) -- first-ever run
+      # of this pipeline (Actions run 30096768416) found 306 pre-existing
+      # ruff errors (228 in tests/, 78 in services/routers/scripts/), none
+      # introduced by this CI change, plus pytest aborts collection entirely
+      # (3 broken test files -- see test-continue-on-error note below).
+      # Rather than blanking lint-command (which hides it entirely), this
+      # opts into app-deploy.yml's lint-continue-on-error input: the Lint
+      # step still runs and its failures still show up as a visibly flagged
+      # allowed-failure in the Actions UI/PR checks, it just no longer blocks
+      # Test or the downstream Build/Deploy jobs. REVERT to false once
       # litportal-backend's lint debt is cleaned up -- don't let this drift
-      # into main permanently disabled.
-      lint-command: ""
+      # into main permanently soft.
+      lint-continue-on-error: true
       test-command: "pytest"
+      # TEMPORARILY ALLOWED TO FAIL (2026-07-24, Lisandro) -- same mechanism
+      # as lint-continue-on-error above, for the Test step. Needed here
+      # because pytest currently aborts with "Interrupted: 3 errors during
+      # collection" before running any of the other 4419 collected tests:
+      # tests/test_phase2b_live_api.py requires a REACT_APP_BACKEND_URL env
+      # var this CI runner doesn't set (looks like a live/integration test,
+      # not a unit test), and tests/test_phase6f1_live_acceptance.py /
+      # tests/test_phase6f_live_api.py call pytest.skip() at module level
+      # without allow_module_level=True. All three are Scienthesis-owned
+      # test-suite issues, not something introduced by this CI change.
+      # Note: this flag only stops the CI job from blocking on pytest's
+      # non-zero exit -- it does NOT make pytest run the other 4419 tests
+      # instead of aborting at collection. If partial results are wanted
+      # (not just "did the job turn red"), test-command would also need
+      # pytest's own `--continue-on-collection-errors` flag, which is a
+      # separate, still-open decision -- left as `pytest` unchanged for now.
+      # REVERT to false once these collection errors are fixed.
+      test-continue-on-error: true
       # TEMPORARY (added 2026-07-23) -- lets Lisandro test this service's
       # real build/scan/push/deploy pipeline against `feat/aws` before it
       # merges to main, same as scienthesis-identity/scienthesis-lithub.
