@@ -1687,6 +1687,24 @@ async def search_session_diagnostics(
         "m3_2_session_decision_sidecar": await _load_m3_2_sidecar_for_session(
             session_id,
         ),
+        # CQM -> legacy question-type reconciliation. The whole point of
+        # ``CQM_TYPE_RECONCILIATION_MODE=shadow`` is to review the
+        # would-be change before flipping to ``active`` — which is
+        # impossible if the block is persisted but never exposed. This
+        # is the read surface for that soak.
+        # Closed-set enum tokens + booleans ONLY (mode, applied,
+        # skipped_reason, primary_intent, baseline/proposed
+        # type_of_question / question_subtype / question_scope,
+        # would_change). NO raw question text, NO prompts, NO PHI.
+        # ``None`` for legacy sessions and whenever the mode is
+        # ``disabled`` (the default), because the pipeline persists
+        # nothing in that case.
+        "cqm_type_reconciliation": (
+            (doc.get("session_diagnostics_json") or {}).get(
+                "cqm_type_reconciliation"
+            )
+            or None
+        ),
         # Phase 5A retest B3 — predictable flat evaluator response.
         "retrieval_evaluator": retrieval_evaluator,
         # Phase K3A — admin-level shadow lane diagnostics. Full

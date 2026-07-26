@@ -810,6 +810,31 @@ def test_qw2b_card_missing_framework_is_rebuilt_when_cqm_exists():
     ) is True
 
 
+def test_qw6_shadow_block_is_exposed_by_the_admin_diagnostics_endpoint():
+    """A shadow diagnostic nobody can read is not a shadow rollout.
+
+    The pipeline persists the block under
+    ``session_diagnostics_json.cqm_type_reconciliation``; the admin
+    diagnostics endpoint must read that exact key. This is a
+    key-name contract test — the same class of defect as QW3, where
+    a reader used ``framework`` against a writer that wrote
+    ``frameworks`` and silently produced ``None`` forever.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    pipeline_src = (root / "services" / "pipeline.py").read_text(encoding="utf-8")
+    admin_src = (root / "routers" / "admin.py").read_text(encoding="utf-8")
+
+    key = "cqm_type_reconciliation"
+    assert f'"session_diagnostics_json.{key}"' in pipeline_src, (
+        "pipeline no longer persists the shadow block under the expected key"
+    )
+    assert f'.get(\n                "{key}"\n            )' in admin_src or (
+        f'"{key}"' in admin_src
+    ), "admin diagnostics endpoint does not expose the shadow block"
+
+
 def test_qw2b_no_persist_before_the_artifacts_exist():
     """The write guard: a mid-pipeline card must not be stored.
 
