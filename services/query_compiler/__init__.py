@@ -357,8 +357,8 @@ def comparator_is_mandatory(picott: dict[str, Any]) -> bool:
 # ---------------------------------------------------------------------------
 # PubMed Clinical Queries filters — NCBI verbatim (public documentation).
 # https://pubmed.ncbi.nlm.nih.gov/help/#clinical-queries-filters
-# We ship 4 categories (therapy / diagnosis / etiology / prognosis),
-# each with broad+narrow scope.
+# We ship 5 categories (therapy / diagnosis / etiology / prognosis /
+# clinical_prediction_guides), each with broad+narrow scope.
 # ---------------------------------------------------------------------------
 CLINICAL_QUERIES_FILTERS: dict[str, dict[str, str]] = {
     "therapy": {
@@ -405,6 +405,25 @@ CLINICAL_QUERIES_FILTERS: dict[str, dict[str, str]] = {
             'cohort[Title/Abstract])'
         ),
     },
+    # NCBI's fifth Clinical Queries category. A prediction-model /
+    # risk-score question (K1 intent ``prediction_model`` -> CHARMS)
+    # was previously served the generic ``prognosis`` filter, which
+    # keys on incidence/mortality/follow-up and misses the derivation
+    # and validation literature that IS the answer to such questions.
+    "clinical_prediction_guides": {
+        "broad": (
+            '(predict*[Title/Abstract] OR predictive value of tests[MeSH Terms] OR '
+            'score[Title/Abstract] OR scores[Title/Abstract] OR '
+            'scoring system[Title/Abstract] OR scoring systems[Title/Abstract] OR '
+            'observ*[Title/Abstract] OR observer variation[MeSH Terms])'
+        ),
+        "narrow": (
+            '(validation[Title/Abstract] OR validate[Title/Abstract] OR '
+            'validated[Title/Abstract] OR rule[Title/Abstract] OR '
+            '(predict*[Title/Abstract] AND (rule[Title/Abstract] OR '
+            'score[Title/Abstract] OR scores[Title/Abstract])))'
+        ),
+    },
 }
 
 _QUESTION_TYPE_TO_CQ_CATEGORY = {
@@ -419,8 +438,28 @@ _QUESTION_TYPE_TO_CQ_CATEGORY = {
     "epidemiology": "prognosis",
 }
 
+# ``question_subtype`` overrides for questions whose ``type_of_question``
+# is too coarse to pick the right Clinical Queries filter. The subtype
+# tokens are the closed-set values emitted by
+# ``clinical_question_map._intent_to_legacy_subtype``.
+#
+# NOTE: ``guideline`` / ``background`` / ``cost`` / ``other`` are
+# deliberately absent from BOTH tables. PubMed Clinical Queries offers
+# only study-design categories; forcing one of them onto a guideline or
+# background question would filter out exactly the narrative reviews and
+# recommendation documents that answer it. Those question types are
+# served by the ``guideline_review`` family in
+# ``concept_block_query_builder`` instead, and ``clinical_queries``
+# correctly yields no family for them.
+_SUBTYPE_TO_CQ_CATEGORY = {
+    "prediction_model": "clinical_prediction_guides",
+}
+
 
 def clinical_queries_category(picott: dict[str, Any]) -> str | None:
+    subtype = (picott.get("question_subtype") or "").lower().strip()
+    if subtype in _SUBTYPE_TO_CQ_CATEGORY:
+        return _SUBTYPE_TO_CQ_CATEGORY[subtype]
     type_of_q = (picott.get("type_of_question") or "").lower()
     return _QUESTION_TYPE_TO_CQ_CATEGORY.get(type_of_q)
 

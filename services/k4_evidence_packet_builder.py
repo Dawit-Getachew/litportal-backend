@@ -328,6 +328,48 @@ def _citation_verification_readiness(article_doc: dict) -> str:
 
 
 # ---------------------------------------------------------------------
+# Closed-set CQM readers.
+# ---------------------------------------------------------------------
+def _cqm_primary_framework(cqm: dict) -> Optional[str]:
+    """Return the CQM's primary framework, or None.
+
+    The persisted ``ClinicalQuestionMap`` carries ``frameworks`` (a
+    LIST, ``clinical_question_map.py`` ``frameworks: List[Framework]``)
+    under ``ConfigDict(extra="forbid")`` — there is NO scalar
+    ``framework`` key at the top level. Reading ``cqm["framework"]``
+    therefore always yielded None, silently nulling every framework
+    signal in this builder (guideline-lane gate, R-series shape
+    dispatch, and the persisted snapshot). Read the list.
+    """
+    fws = cqm.get("frameworks")
+    if isinstance(fws, list):
+        for fw in fws:
+            if isinstance(fw, str) and fw.strip():
+                return fw.strip()
+    return None
+
+
+def _cqm_anchor_concepts(cqm: dict, *, required_only: bool) -> list[str]:
+    """Canonical concepts from ``framework_neutral_slots``.
+
+    Same class of defect as ``framework``: the CQM has no ``anchors`` /
+    ``required_anchors`` keys. The anchors live on the slots, where
+    ``required_for_search`` is the closed-set retrieval flag (kept in
+    lock-step with ``slot_search_policy`` by the Slot validator).
+    """
+    out: list[str] = []
+    for slot in (cqm.get("framework_neutral_slots") or []):
+        if not isinstance(slot, dict):
+            continue
+        if required_only and not slot.get("required_for_search"):
+            continue
+        concept = str(slot.get("canonical_concept") or "").strip()
+        if concept and concept not in out:
+            out.append(concept)
+    return out
+
+
+# ---------------------------------------------------------------------
 # Public builder.
 # ---------------------------------------------------------------------
 async def build_evidence_packet(
@@ -355,6 +397,7 @@ async def build_evidence_packet(
     bqp = cqm.get("branch_query_plan") or {}
     branches_raw = list(bqp.get("branches") or [])
     primary_intent = str(cqm.get("primary_intent") or "").strip().lower()
+    primary_framework = _cqm_primary_framework(cqm)
 
     # Phase K5.1 — guideline-lane gate. Surfaced only for guideline /
     # management / protocol / stabilization / monitoring / prevention /
@@ -365,7 +408,7 @@ async def build_evidence_packet(
             cqm.get("secondary_intents")
             or cqm.get("secondary_intents_json")
         ),
-        framework=cqm.get("framework"),
+        framework=primary_framework,
         question=(
             session_doc.get("sanitized_question")
             or session_doc.get("original_question")
@@ -387,7 +430,7 @@ async def build_evidence_packet(
     # the right detector.
     shape_source = (
         cqm.get("primary_intent")
-        or cqm.get("framework")
+        or primary_framework
         or session_doc.get("clinical_question_type")
         or ""
     )
@@ -425,9 +468,10 @@ async def build_evidence_packet(
     # Snapshot CQM (closed-set canonical fields only — no raw user text)
     cqm_snapshot = {
         "primary_intent": cqm.get("primary_intent"),
-        "framework": cqm.get("framework"),
-        "anchors": cqm.get("anchors"),
-        "required_anchors": cqm.get("required_anchors"),
+        "framework": primary_framework,
+        "frameworks": list(cqm.get("frameworks") or []),
+        "anchors": _cqm_anchor_concepts(cqm, required_only=False),
+        "required_anchors": _cqm_anchor_concepts(cqm, required_only=True),
         "branch_query_plan_summary": {
             "schema_version": bqp.get("schema_version"),
             "mode": bqp.get("mode"),

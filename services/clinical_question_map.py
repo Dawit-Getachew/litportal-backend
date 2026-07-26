@@ -222,6 +222,41 @@ RESERVED_FRAMEWORKS: frozenset[str] = frozenset({
     "SPIDER", "SPICE", "ECLIPSE",
 })
 
+# ---------------------------------------------------------------------
+# Routing reachability (declaration vs. reality).
+#
+# ``ACTIVE_FRAMEWORKS`` is a DECLARATION of the schema's closed set. It
+# is NOT a statement that the router can produce each member. The only
+# producer is ``pipeline._k1_framework_for_intent``, a closed-set
+# intent -> framework lookup, and four ACTIVE members have no intent
+# arm — no ClinicalIntent maps to them, and no slot shape, query
+# family, or downstream consumer defines what they would mean.
+#
+# Splitting the set makes that explicit and gives
+# ``test_every_routed_framework_is_reachable_from_an_intent`` a real
+# invariant to enforce: previously the only framework test asserted
+# that all 14 were *declared*, which passes trivially and gave false
+# confidence that all 14 were *reachable*.
+#
+# To promote a member out of ``DECLARED_NOT_ROUTED``: define its slot
+# semantics, add the ClinicalIntent that implies it, add the arm in
+# ``_k1_framework_for_intent``, and move it into ``ROUTED_FRAMEWORKS``.
+# The reachability test then enforces the wiring.
+# ---------------------------------------------------------------------
+
+ROUTED_FRAMEWORKS: frozenset[str] = frozenset({
+    "PICOTT", "PECO", "PIRD", "PFO", "CHARMS", "CoCoPop",
+    "PICOTS", "problem_context_differential", "concept_mechanism",
+    "guideline_stabilization",
+})
+
+# Declared in ``ActiveFramework`` but unreachable: no intent maps to
+# them. Kept in the Literal so persisted documents and operator-curated
+# maps that already carry these values still validate.
+DECLARED_NOT_ROUTED: frozenset[str] = frozenset({
+    "PIRT", "PECOT", "PEO", "PCC",
+})
+
 
 # ---------------------------------------------------------------------
 # K1.D — Slot schema (slot_role + slot_search_policy).
@@ -896,6 +931,8 @@ __all__ = [
     "DEFERRED_INTENTS",
     "ACTIVE_FRAMEWORKS",
     "RESERVED_FRAMEWORKS",
+    "ROUTED_FRAMEWORKS",
+    "DECLARED_NOT_ROUTED",
     # Enums (re-exported for tests + type stubs)
     "ActiveIntent",
     "DeferredIntent",

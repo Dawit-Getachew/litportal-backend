@@ -32,10 +32,87 @@ logger = logging.getLogger("clinevidence.interpreted_question_display")
 
 NOT_SPECIFIED = "Not specified"
 
+# Bump whenever the SHAPE of the returned display dict changes. The
+# read path in ``routers/search_sessions.py`` compares this against the
+# cached ``interpreted_question_display_json`` and rebuilds on mismatch
+# — without it, every pre-existing session keeps serving the old card
+# forever, because the cache is only ever invalidated by the narrow
+# ``Other (...)`` heal.
+#   1 — implicit baseline (pre-versioning)
+#   2 — adds question_framework / question_frameworks / clinical_intent
+DISPLAY_SCHEMA_VERSION = 2
+
 # Closed set of legacy specialty values that must NEVER override a
 # PICOTT specialty. ``primary_care`` is the most-frequent culprit on
 # narrow specialty questions (cardiology, neurology, etc.).
 _LEGACY_SPECIALTY_BLOCKLIST = {"primary_care", "general_practice", ""}
+
+# ``ClinicalIntent`` / framework tokens are snake_case or acronyms.
+# Acronyms (PICOTT, PIRD, CoCoPop, CHARMS...) are already display-ready
+# and MUST NOT be title-cased; only the descriptive snake_case members
+# (``concept_mechanism``, ``problem_context_differential``,
+# ``guideline_stabilization``) need humanizing.
+def _humanize_framework(framework: Any) -> str:
+    """Render a framework token for the clinician card."""
+    s = str(framework or "").strip()
+    if not s:
+        return NOT_SPECIFIED
+    if "_" not in s:
+        # Acronym form — preserve the canonical casing exactly.
+        return s
+    return s.replace("_", " ").strip().capitalize()
+
+
+def _humanize_clinical_intent(intent: Any) -> str:
+    """Render a ClinicalIntent token for the clinician card."""
+    s = str(intent or "").strip()
+    if not s:
+        return NOT_SPECIFIED
+    return s.replace("_", " ").strip().capitalize()
+
+
+def _framework_display_fields(session_doc: dict) -> dict[str, Any]:
+    """Framework / intent fields from the persisted ClinicalQuestionMap.
+
+    The CQM has been computed live on every search since Phase K1 and
+    persisted to ``search_sessions.clinical_question_map_json``, but no
+    clinician-facing surface ever read it — the card rendered a fixed
+    PICO grid for all 14 frameworks, which is why a prevalence question
+    (CoCoPop) and a diagnostic-accuracy question (PIRD) looked
+    identical. Read-only; never affects retrieval or ranking.
+    """
+    cqm = session_doc.get("clinical_question_map_json") or {}
+    if not isinstance(cqm, dict):
+        return {
+            "question_framework": NOT_SPECIFIED,
+            "question_framework_raw": None,
+            "question_frameworks": [],
+            "clinical_intent": NOT_SPECIFIED,
+            "clinical_intent_raw": None,
+            "secondary_clinical_intents": [],
+        }
+    frameworks = [
+        str(f).strip() for f in (cqm.get("frameworks") or [])
+        if isinstance(f, str) and str(f).strip()
+    ]
+    primary_framework = frameworks[0] if frameworks else None
+    primary_intent = cqm.get("primary_intent")
+    secondary = [
+        str(i).strip() for i in (cqm.get("secondary_intents") or [])
+        if isinstance(i, str) and str(i).strip()
+    ]
+    return {
+        "question_framework": _humanize_framework(primary_framework),
+        "question_framework_raw": primary_framework,
+        "question_frameworks": [_humanize_framework(f) for f in frameworks],
+        "clinical_intent": _humanize_clinical_intent(primary_intent),
+        "clinical_intent_raw": (
+            str(primary_intent).strip() if primary_intent else None
+        ),
+        "secondary_clinical_intents": [
+            _humanize_clinical_intent(i) for i in secondary
+        ],
+    }
 
 
 def _str_or_not_specified(value: Any) -> str:
@@ -662,6 +739,9 @@ def build_interpreted_question_display(session_doc: dict) -> dict[str, Any]:
         return {
             "source": "picott",
             "has_picott": True,
+            "display_schema_version": DISPLAY_SCHEMA_VERSION,
+            # Framework / intent badges from the ClinicalQuestionMap.
+            **_framework_display_fields(session_doc),
             # Top-line badges (Phase 5F.1 cascade)
             "question_scope": _humanize_question_scope(scope_cascaded),
             "type_of_question": _humanize_type_of_question(
@@ -751,6 +831,10 @@ def build_interpreted_question_display(session_doc: dict) -> dict[str, Any]:
     return {
         "source": "legacy_pico_json",
         "has_picott": False,
+        "display_schema_version": DISPLAY_SCHEMA_VERSION,
+        # The CQM is built independently of PICOTT, so a legacy-only
+        # session can still carry a valid framework.
+        **_framework_display_fields(session_doc),
         "question_scope": NOT_SPECIFIED,
         "type_of_question": _humanize_type_of_question(legacy_qtype, None),
         "type_of_question_raw": legacy_qtype or "other",

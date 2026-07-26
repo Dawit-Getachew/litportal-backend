@@ -31,6 +31,7 @@ from core.db import Collections, get_db
 from services.audit import audit_service
 from services.clinical_context_engine import build_clinical_context
 from services.clinical_question_parser import clinical_question_parser
+from services.picott_extractor import picott_extractor
 from services.concept_block_query_builder import concept_block_query_builder
 from services import ai_query_expansion
 from services.query_compiler import boolean_query_compiler
@@ -62,7 +63,12 @@ from services.clinical_question_map import (
     InferredConcept as _CQMInferredConcept,
     Slot as _CQMSlot,
     normalize_slot_semantics as _cqm_normalize_slot_semantics,
+    _intent_to_legacy_type_of_question as _cqm_intent_to_legacy_type,
+    _intent_to_legacy_subtype as _cqm_intent_to_legacy_subtype,
+    _intent_to_legacy_scope as _cqm_intent_to_legacy_scope,
 )
+from models.picott import TYPE_OF_QUESTION_VALUES
+from services.study_type_router import study_type_router
 from services.branch_aware_boolean_query_planner import (
     plan_branch_queries as _k2_plan_branch_queries,
 )
@@ -266,6 +272,177 @@ def _k1_framework_for_intent(intent: str) -> str:
     if intent == "prevention_screening":
         return "PICOTS"
     return "PICOTT"
+
+
+# ---------------------------------------------------------------------
+# CQM -> legacy type reconciliation.
+#
+# The K1 ClinicalQuestionMap picks the question's framework and intent
+# correctly, but until now it was a WRITE-ONLY artifact: the two live
+# query producers (``concept_block_query_builder.build`` and
+# ``boolean_query_compiler.compile``) receive ``picott_payload`` only
+# and never see the CQM. The single question-shape lever that DOES
+# reach the sources is ``picott.type_of_question``, a coarser 13-value
+# enum derived from the keyword-gated legacy parser — and it disagrees
+# with the CQM intent on a large share of questions (e.g. a prevalence
+# question routes CQM->CoCoPop while sending PubMed the *background*
+# publication-type filter: Review / Guideline / Systematic Review).
+#
+# This bridges the two using ``clinical_question_map``'s existing —
+# and until now uncalled — derivation helpers. Every token they emit
+# is a valid ``TypeOfQuestion`` member and a valid
+# ``study_type_router`` pathway key, so the reconciled payload stays
+# inside the closed sets every downstream consumer already handles.
+#
+# Modes (``CQM_TYPE_RECONCILIATION_MODE``, default ``disabled``):
+#   disabled — no-op. Byte-identical to the pre-existing behavior.
+#   shadow   — compute the proposed values, record the diff in
+#              diagnostics, change NOTHING that reaches retrieval.
+#   active   — apply the proposed values to ``picott_payload`` before
+#              the query producers run.
+#
+# Fail-closed: any unexpected condition leaves the payload untouched
+# and records a closed-set skip reason. NEVER raises.
+# ---------------------------------------------------------------------
+
+_CQM_TYPE_RECONCILIATION_MODES = frozenset({"disabled", "shadow", "active"})
+
+
+def _cqm_type_reconciliation_mode() -> str:
+    """Closed-set mode resolver. Unknown values fail safe to ``disabled``."""
+    raw = (os.environ.get("CQM_TYPE_RECONCILIATION_MODE") or "").strip().lower()
+    if raw not in _CQM_TYPE_RECONCILIATION_MODES:
+        return "disabled"
+    return raw
+
+
+def _apply_cqm_type_reconciliation(
+    *,
+    picott_payload: dict[str, Any],
+    cqm_json: Optional[dict[str, Any]],
+) -> dict[str, Any]:
+    """Reconcile ``picott_payload``'s question shape with the CQM intent.
+
+    Mutates ``picott_payload`` in place ONLY when mode == ``active``.
+    Returns a JSON-safe diagnostics block for persistence; never raises.
+    """
+    diag: dict[str, Any] = {
+        "mode": _cqm_type_reconciliation_mode(),
+        "applied": False,
+        "skipped_reason": None,
+        "primary_intent": None,
+        "baseline_type_of_question": None,
+        "proposed_type_of_question": None,
+        "baseline_question_subtype": None,
+        "proposed_question_subtype": None,
+        "baseline_question_scope": None,
+        "proposed_question_scope": None,
+        "would_change": False,
+    }
+    try:
+        if diag["mode"] == "disabled":
+            diag["skipped_reason"] = "mode_disabled"
+            return diag
+        if not isinstance(picott_payload, dict) or not picott_payload:
+            diag["skipped_reason"] = "no_picott_payload"
+            return diag
+        if not isinstance(cqm_json, dict) or not cqm_json:
+            diag["skipped_reason"] = "no_clinical_question_map"
+            return diag
+        # Trust test. NOTE: ``clarification_required`` alone is NOT a
+        # reason to skip. On the searching path it is set whenever the
+        # anchor extractor found no *primary anchor*
+        # (``_k1_build_clinical_question_map`` provenance rules), while
+        # the intent and framework still come from the deterministic
+        # signal router and are genuine — a real prevalence question
+        # routes to CoCoPop with ``clarification_required=True``. Gating
+        # on it would disable reconciliation for a large share of
+        # exactly the questions this is meant to fix.
+        #
+        # The honest signal is ``clinical_validity``: the
+        # ``_k1_clarification_required_placeholder`` fallback (built when
+        # the map could not be assembled at all) sets it False and forces
+        # ``primary_intent="background_overview"`` /
+        # ``frameworks=["PICOTT"]``. That map must never steer retrieval.
+        if cqm_json.get("clinical_validity") is False:
+            diag["skipped_reason"] = "clinical_validity_false"
+            return diag
+
+        intent = str(cqm_json.get("primary_intent") or "").strip()
+        if not intent:
+            diag["skipped_reason"] = "no_primary_intent"
+            return diag
+        diag["primary_intent"] = intent
+
+        # Deferred intents are the "shape we do not support" bucket;
+        # they all fall through to the PICOTT/``other`` default anyway.
+        # Skip explicitly so the diagnostics say why.
+        if intent in _CQM_DEFERRED_INTENTS:
+            diag["skipped_reason"] = "deferred_intent"
+            return diag
+
+        proposed_type = _cqm_intent_to_legacy_type(intent)
+        proposed_subtype = _cqm_intent_to_legacy_subtype(intent)
+        proposed_scope = _cqm_intent_to_legacy_scope(intent)
+
+        # Defence in depth: only ever write a value the downstream
+        # enum + pathway table actually knows. ``_intent_to_legacy_*``
+        # is closed-set today; this guard keeps that true if the intent
+        # enum grows.
+        if proposed_type not in TYPE_OF_QUESTION_VALUES:
+            diag["skipped_reason"] = "proposed_type_not_in_closed_set"
+            return diag
+
+        baseline_type = picott_payload.get("type_of_question")
+        baseline_subtype = picott_payload.get("question_subtype")
+        baseline_scope = picott_payload.get("question_scope")
+        diag.update({
+            "baseline_type_of_question": baseline_type,
+            "proposed_type_of_question": proposed_type,
+            "baseline_question_subtype": baseline_subtype,
+            "proposed_question_subtype": proposed_subtype,
+            "baseline_question_scope": baseline_scope,
+            "proposed_question_scope": proposed_scope,
+            "would_change": bool(
+                baseline_type != proposed_type
+                or baseline_subtype != proposed_subtype
+                or baseline_scope != proposed_scope
+            ),
+        })
+
+        if diag["mode"] == "shadow":
+            diag["skipped_reason"] = "shadow_mode"
+            return diag
+
+        picott_payload["type_of_question"] = proposed_type
+        # Never blank an existing subtype the parser worked out; the
+        # intent table returns None for intents with no canonical
+        # subtype, and a None there means "no opinion", not "clear it".
+        if proposed_subtype:
+            picott_payload["question_subtype"] = proposed_subtype
+        picott_payload["question_scope"] = proposed_scope
+
+        # ``ideal_study_types`` is derived from type_of_question by the
+        # extractor; recompute it so the ranker's design preferences
+        # match the reconciled shape instead of the stale one.
+        try:
+            pathway = study_type_router.pathway(proposed_type)
+            picott_payload["ideal_study_types"] = list(
+                pathway.preferred_study_types
+            ) + list(pathway.acceptable_study_types)
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "cqm_type_reconciliation ideal_study_types refresh failed "
+                "(non-fatal)",
+            )
+
+        diag["applied"] = True
+        return diag
+    except Exception:  # noqa: BLE001
+        logger.exception("cqm_type_reconciliation failed (non-fatal)")
+        diag["applied"] = False
+        diag["skipped_reason"] = "exception"
+        return diag
 
 
 # Map K1 SlotRole based on anchor's existing closed-set ``entity_type``
@@ -1062,6 +1239,32 @@ async def run_pipeline(
                 await maybe_categorize(session_id, user_id, sanitized_question, parsed)
             except Exception:  # noqa: BLE001
                 logger.exception("ai_query_categorizer hook failed (non-fatal)")
+            # The categorizer rewrites ``parsed["clinical_question_type"]``,
+            # but ``parse()`` already derived ``picott_json`` from the OLD
+            # value (clinical_question_parser._merge_picott ->
+            # picott_extractor.build). Everything downstream reads
+            # ``picott_json`` — so without this rebuild the agent's
+            # refinement is recorded in diagnostics and then ignored,
+            # making AI_QUERY_CATEGORIZER_ENABLED inert for routing.
+            # Rebuild ONLY when the agent actually applied a change.
+            if (parsed.get("ai_query_categorizer") or {}).get("applied"):
+                try:
+                    _recat = picott_extractor.build(sanitized_question, parsed)
+                    if _recat:
+                        parsed["picott_json"] = _recat
+                        logger.info(
+                            "ai_query_categorizer picott rebuilt session_id=%s "
+                            "type=%s",
+                            session_id,
+                            parsed.get("clinical_question_type"),
+                        )
+                except Exception:  # noqa: BLE001
+                    # Keep the pre-agent payload rather than a half-built
+                    # one — the deterministic parse is always valid.
+                    logger.exception(
+                        "ai_query_categorizer picott rebuild failed "
+                        "(non-fatal); keeping deterministic payload",
+                    )
             topic_label = _topic_label_from(parsed.get("normalized_question") or sanitized_question)
             picott_payload = parsed.get("picott_json") or {}
 
@@ -2841,6 +3044,33 @@ async def run_pipeline(
                 "phaseK1 searching CQM build failed (non-fatal)"
             )
             _cqm_json_search = None
+
+        # CQM -> legacy type reconciliation. MUST run after the CQM is
+        # built and BEFORE ``_set_status`` persists ``picott_json``, so
+        # the payload the query producers consume at :3097 / :3111 is
+        # the same one that gets persisted. Default-OFF; see
+        # ``_apply_cqm_type_reconciliation``.
+        _cqm_type_recon_diag = _apply_cqm_type_reconciliation(
+            picott_payload=picott_payload,
+            cqm_json=_cqm_json_search,
+        )
+        if _cqm_type_recon_diag.get("mode") != "disabled":
+            parsed.setdefault("session_diagnostics_json", {})
+            parsed["session_diagnostics_json"]["cqm_type_reconciliation"] = (
+                dict(_cqm_type_recon_diag)
+            )
+            logger.info(
+                "cqm_type_reconciliation session_id=%s mode=%s applied=%s "
+                "intent=%s %s->%s would_change=%s skipped=%s",
+                session_id,
+                _cqm_type_recon_diag.get("mode"),
+                _cqm_type_recon_diag.get("applied"),
+                _cqm_type_recon_diag.get("primary_intent"),
+                _cqm_type_recon_diag.get("baseline_type_of_question"),
+                _cqm_type_recon_diag.get("proposed_type_of_question"),
+                _cqm_type_recon_diag.get("would_change"),
+                _cqm_type_recon_diag.get("skipped_reason"),
+            )
 
         await _set_status(
             session_id,
@@ -5166,6 +5396,17 @@ async def run_pipeline(
                             (locals().get("parsed") or {})
                             .get("session_diagnostics_json", {})
                             .get("m4_active")
+                        ),
+                    # CQM -> legacy type reconciliation. ``None`` when
+                    # the mode is ``disabled`` (the default), so legacy
+                    # sessions and opted-out deployments persist nothing.
+                    # Closed-set enum tokens + booleans ONLY: no raw
+                    # question text, no prompts, no PHI.
+                    "session_diagnostics_json.cqm_type_reconciliation":
+                        (
+                            (locals().get("parsed") or {})
+                            .get("session_diagnostics_json", {})
+                            .get("cqm_type_reconciliation")
                         ),
                 }},
             )

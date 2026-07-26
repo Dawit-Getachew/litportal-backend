@@ -40,7 +40,9 @@ import pytest
 from services.clinical_question_map import (
     ACTIVE_FRAMEWORKS,
     ACTIVE_INTENTS,
+    DECLARED_NOT_ROUTED,
     DEFERRED_INTENTS,
+    ROUTED_FRAMEWORKS,
     PROMPT_VERSION_K1,
     SCHEMA_VERSION,
     Branch,
@@ -193,6 +195,51 @@ def test_active_frameworks_includes_core_set() -> None:
         "guideline_stabilization",
     ]:
         assert f in ACTIVE_FRAMEWORKS
+
+
+def test_routed_and_not_routed_partition_active_frameworks() -> None:
+    """The two sets must exactly partition ``ACTIVE_FRAMEWORKS``.
+
+    Guards against a framework being added to the Literal without a
+    deliberate decision about whether the router can emit it.
+    """
+    assert ROUTED_FRAMEWORKS & DECLARED_NOT_ROUTED == frozenset()
+    assert ROUTED_FRAMEWORKS | DECLARED_NOT_ROUTED == ACTIVE_FRAMEWORKS
+
+
+def test_every_routed_framework_is_reachable_from_an_intent() -> None:
+    """Every ROUTED framework must be emitted by >=1 ClinicalIntent.
+
+    Replaces the declaration-only assertion above with the invariant
+    that actually matters: the framework the client sees is produced by
+    ``_k1_framework_for_intent``, so a framework nobody can reach is a
+    dead enum member, not a feature.
+    """
+    from services.pipeline import _k1_framework_for_intent
+
+    reachable = {
+        _k1_framework_for_intent(intent)
+        for intent in (ACTIVE_INTENTS | DEFERRED_INTENTS)
+    }
+    missing = ROUTED_FRAMEWORKS - reachable
+    assert missing == set(), (
+        f"ROUTED_FRAMEWORKS unreachable from any intent: {sorted(missing)}"
+    )
+
+
+def test_declared_not_routed_frameworks_are_genuinely_unreachable() -> None:
+    """Documents the known gap so promoting one is a deliberate act.
+
+    If this fails, a framework became reachable — move it into
+    ``ROUTED_FRAMEWORKS``.
+    """
+    from services.pipeline import _k1_framework_for_intent
+
+    reachable = {
+        _k1_framework_for_intent(intent)
+        for intent in (ACTIVE_INTENTS | DEFERRED_INTENTS)
+    }
+    assert DECLARED_NOT_ROUTED & reachable == set()
 
 
 def test_slot_search_policy_required_must_match_legacy_required_bool() -> None:

@@ -35,6 +35,7 @@ from services.article_lane_classifier import (
 from services.audit import audit_service
 from services.full_text_access_broker import full_text_access_broker
 from services.interpreted_question_display import (
+    DISPLAY_SCHEMA_VERSION,
     build_interpreted_question_display,
     build_m4_interpreted_display,
 )
@@ -1595,11 +1596,20 @@ async def get_session(session_id: str, current_user: dict = Depends(get_current_
     # Phase 5D.1 — build the canonical interpreted-question display JSON
     cached_display = doc.get("interpreted_question_display_json")
     _stale_other_paren = False
+    _stale_schema_version = False
     if cached_display:
         _cached_toq = (cached_display.get("type_of_question") or "")
         if _cached_toq.startswith("Other (") and _cached_toq.endswith(")"):
             _stale_other_paren = True
-    if cached_display and not _stale_other_paren:
+        # Rebuild whenever the display SHAPE has moved on. Without this
+        # the only invalidation is the narrow ``Other (...)`` heal
+        # above, so every session created before a schema change keeps
+        # serving the old card indefinitely.
+        if int(cached_display.get("display_schema_version") or 1) != int(
+            DISPLAY_SCHEMA_VERSION
+        ):
+            _stale_schema_version = True
+    if cached_display and not _stale_other_paren and not _stale_schema_version:
         body["interpreted_question_display_json"] = cached_display
     else:
         try:

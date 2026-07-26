@@ -207,9 +207,16 @@ class TestGroupC_EuropePMCCompiler:
 # =============================================================================
 
 class TestGroupD_ClinicalQueries:
-    def test_filter_table_covers_4_categories(self):
+    def test_filter_table_covers_the_ncbi_categories(self):
+        # NCBI ships five Clinical Queries categories. The fifth,
+        # Clinical Prediction Guides, was added so a prediction-model /
+        # risk-score question (K1 intent ``prediction_model`` -> CHARMS)
+        # stops being served the generic ``prognosis`` filter, which
+        # keys on incidence/mortality and misses the derivation and
+        # validation literature that answers such questions.
         assert set(CLINICAL_QUERIES_FILTERS.keys()) == {
             "therapy", "diagnosis", "etiology", "prognosis",
+            "clinical_prediction_guides",
         }
         for cat, scopes in CLINICAL_QUERIES_FILTERS.items():
             assert set(scopes.keys()) == {"broad", "narrow"}, cat
