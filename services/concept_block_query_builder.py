@@ -163,11 +163,57 @@ def _dedupe_preserve(seq):
 # ---------------------------------------------------------------------------
 # Block extraction from a PICOTT dict.
 # ---------------------------------------------------------------------------
+
+# ``ConceptRole`` members that carry TOPICAL meaning but have no block of
+# their own. Recovered into an existing block rather than dropped.
+#
+# Deliberately EXCLUDES the three roles whose semantics are handled
+# elsewhere and which would poison a topical OR group:
+#   * ``study_design``  -> the publication-type filter already encodes it
+#   * ``setting``       -> "ICU"/"outpatient" OR-ed into a disease block
+#                          would match any ICU paper
+#   * ``time_horizon``  -> "30-day" likewise
+# Unknown/future role strings are treated as topical, which is the safe
+# default: OR-ing widens, dropping loses the concept entirely.
+_NEVER_RECOVER_ROLES = frozenset({"study_design", "setting", "time_horizon"})
+
+# Preference order for where recovered terms land. ``condition`` first —
+# unclassified must-haves are overwhelmingly disease/topic phrases.
+_UNMAPPED_MERGE_PREFERENCE = ("condition", "intervention", "population", "outcome")
+
+
+def _recover_unmapped_roles() -> bool:
+    """Kill switch for the recovery above. Default ON — it is a bug fix
+    and it can only widen an existing OR group — but a single env var
+    reverts to the previous drop-on-the-floor behavior if it ever
+    regresses precision in production.
+    """
+    return (
+        os.environ.get("PICOTT_RECOVER_UNMAPPED_ROLES", "true").strip().lower()
+        not in {"0", "false", "no", "off"}
+    )
+
+
+def _unmapped_merge_target(blocks: dict[str, list[str]]) -> str:
+    """Pick an EXISTING non-empty block to OR the recovered terms into.
+
+    Returns the first non-empty block in preference order. If every
+    candidate block is empty, returns ``condition`` — in that case the
+    recovered terms become the only group, so no conjunct is added and
+    the query goes from "nothing usable" to "something".
+    """
+    for role in _UNMAPPED_MERGE_PREFERENCE:
+        if blocks.get(role):
+            return role
+    return "condition"
+
+
 def _build_blocks(picott: dict[str, Any]) -> dict[str, list[str]]:
     """Extract concept blocks from PICOTT. Each block is the canonical
     concept + its expanded synonyms — used as an OR group."""
     pico = picott.get("pico") or {}
     must = picott.get("must_have_concepts") or []
+    unmapped: list[str] = []
     blocks: dict[str, list[str]] = {
         "population": list(pico.get("population") or []),
         "intervention": [],
@@ -194,6 +240,28 @@ def _build_blocks(picott: dict[str, Any]) -> dict[str, list[str]]:
             blocks["population"].extend(terms)
         elif role == "context":
             blocks["context"].extend(terms)
+        elif role not in _NEVER_RECOVER_ROLES and _recover_unmapped_roles():
+            # BUG FIX — previously this chain had no ``else``, so any
+            # must-have whose role was not one of the six block roles was
+            # SILENTLY DROPPED from every query. ``other`` is the common
+            # case and it is not junk: it is a required-for-relevance
+            # topical concept the parser could not confidently role-tag.
+            #
+            # Observed live (prognosis of idiopathic pulmonary fibrosis):
+            # 'Idiopathic Pulmonary Fibrosis', 'Pulmonary Fibrosis' and
+            # 'Prognosis' were all role=other and never reached PubMed —
+            # only the fused literal 'prognosis of idiopathic pulmonary
+            # fibrosis' survived, which matches almost nothing.
+            #
+            # CRITICAL: these terms must be OR-ed into an EXISTING
+            # non-empty block, never given a block of their own. Blocks
+            # are AND-ed together and empty ones are skipped
+            # (``if terms:`` in the emitters), so a new block would ADD a
+            # conjunct and REDUCE recall — the opposite of the fix.
+            unmapped.extend(terms)
+    if unmapped:
+        target = _unmapped_merge_target(blocks)
+        blocks[target].extend(unmapped)
     # Add ranking concepts (context-role only) into context block.
     for rc in (picott.get("ranking_concepts") or []):
         if (rc.get("role") or "").lower() == "context":

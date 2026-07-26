@@ -307,6 +307,40 @@ def _k1_framework_for_intent(intent: str) -> str:
 
 _CQM_TYPE_RECONCILIATION_MODES = frozenset({"disabled", "shadow", "active"})
 
+# Closed-set intent specialization table for Rule 2b in
+# ``_k1_build_clinical_question_map``. Key = the coarser intent the
+# PICOTT path derives; value = intents the deterministic signal router
+# may promote it to. Every pair is same-family and strictly more
+# specific, so promotion can only sharpen the framework choice:
+#   prognosis_natural_history -> prognostic_factor (PFO) | prediction_model (CHARMS)
+#   diagnostic_workup         -> diagnosis_accuracy (PIRD)
+#   risk_etiology_harm        -> the four complication intents (all PECO)
+# Deliberately does NOT include the two coarse fallbacks
+# (background_overview / therapy) — Rule 2 already covers those.
+_CQM_INTENT_SPECIALIZATIONS: dict[str, tuple[str, ...]] = {
+    "prognosis_natural_history": ("prediction_model", "prognostic_factor"),
+    "diagnostic_workup": ("diagnosis_accuracy",),
+    "risk_etiology_harm": (
+        "drug_complication", "device_complication",
+        "procedure_complication", "complication_risk",
+    ),
+}
+
+
+def _intent_specialization_enabled() -> bool:
+    """Gate for Rule 2b. DEFAULT OFF.
+
+    Unlike the type reconciliation this has no shadow mode — it changes
+    the persisted framework/intent directly — so it ships off and must
+    be opted into deliberately. Its effect is observable in
+    ``clinical_question_map.frameworks`` and in the
+    ``cqm_intent_specialization`` log line.
+    """
+    return (
+        os.environ.get("CQM_INTENT_SPECIALIZATION_ENABLED", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+
 
 def _cqm_type_reconciliation_mode() -> str:
     """Closed-set mode resolver. Unknown values fail safe to ``disabled``."""
@@ -666,6 +700,35 @@ def _k1_build_clinical_question_map(
                 if cand in _STRONG_OVERRIDE_INTENTS and intent in _FALLBACK_INTENTS:
                     intent = cand
                     break
+            else:
+                # Rule 2b — SPECIALIZATION promotion (flag-gated, default OFF).
+                #
+                # Rule 2 only fires when the PICOTT-derived intent is one
+                # of the two coarse fallbacks. When the parser lands on a
+                # mid-specificity intent the router's better, more
+                # specific match is discarded — even though the intent is
+                # already in ``_STRONG_OVERRIDE_INTENTS``.
+                #
+                # Observed live: "Which prediction model best estimates
+                # 30-day mortality in sepsis?" derives
+                # ``prognosis_natural_history`` (-> PFO). The router DOES
+                # detect ``prediction_model`` (-> CHARMS) but the gate
+                # rejects it, so CHARMS is unreachable in practice and
+                # ``question_subtype`` is never ``prediction_model`` —
+                # which in turn makes the NCBI Clinical Prediction Guides
+                # filter dead code.
+                #
+                # Promote ONLY within the closed-set specialization table
+                # below: same clinical family, strictly more specific.
+                # This never reshuffles unrelated questions.
+                if _intent_specialization_enabled():
+                    for cand in signal_intents:
+                        if cand in _CQM_INTENT_SPECIALIZATIONS.get(intent, ()):
+                            logger.info(
+                                "cqm_intent_specialization %s -> %s", intent, cand,
+                            )
+                            intent = cand
+                            break
 
         # Phase K1.1 — multi-intent secondary-intent emission. When the
         # signal router detected ≥2 distinct active intents AND

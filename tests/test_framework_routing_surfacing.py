@@ -884,6 +884,103 @@ def test_qw6_would_change_true_when_only_the_subtype_is_added(monkeypatch):
     assert diag["effective_question_subtype"] == "diagnostic_accuracy"
 
 
+# =====================================================================
+# Rule 2b — intent specialization (unlocks CHARMS, makes QW7 live)
+# =====================================================================
+async def _route(question, *, specialization, monkeypatch):
+    from services.clinical_question_parser import clinical_question_parser
+    from services.clinical_signal_router import clinical_signal_router
+    from services import pipeline as P
+
+    monkeypatch.setenv("LLM_PROVIDER", "none")
+    monkeypatch.setenv("CQM_INTENT_SPECIALIZATION_ENABLED", specialization)
+    monkeypatch.setenv("CQM_TYPE_RECONCILIATION_MODE", "active")
+    parsed = await clinical_question_parser.parse(question)
+    picott = dict(parsed.get("picott_json") or {})
+    signal = clinical_signal_router.analyze(
+        parsed.get("normalized_question") or question
+    ).model_dump(mode="json")
+    cqm = P._k1_build_clinical_question_map(
+        normalized_question=parsed.get("normalized_question") or question,
+        original_question=question, picott_payload=picott,
+        anchors_out=parsed.get("primary_clinical_anchors_json") or {},
+        resolver_diag={}, signal_summary=signal, clarification_only=False,
+    )
+    P._apply_cqm_type_reconciliation(picott_payload=picott, cqm_json=cqm)
+    return cqm, picott
+
+
+_PREDICTION_Q = "Which prediction model best estimates 30-day mortality in sepsis?"
+
+
+@pytest.mark.asyncio
+async def test_rule2b_default_off_reproduces_the_live_misroute(monkeypatch):
+    """Production session 6f41d7d1: routes to PFO, not CHARMS.
+
+    Rule 2 only promotes when the derived intent is one of the two
+    coarse fallbacks; this question derives
+    ``prognosis_natural_history``, so the router's ``prediction_model``
+    match is discarded.
+    """
+    cqm, picott = await _route(_PREDICTION_Q, specialization="false",
+                               monkeypatch=monkeypatch)
+    assert cqm["frameworks"] == ["PFO"]
+    assert cqm["primary_intent"] == "prognosis_natural_history"
+    assert picott["question_subtype"] != "prediction_model"
+
+
+@pytest.mark.asyncio
+async def test_rule2b_on_reaches_charms_and_activates_the_cpg_filter(monkeypatch):
+    """The full chain: specialization -> CHARMS -> prediction_model
+    subtype -> NCBI Clinical Prediction Guides filter. Without Rule 2b
+    the QW7 filter is unreachable in production.
+    """
+    from services.query_compiler import clinical_queries_category
+
+    cqm, picott = await _route(_PREDICTION_Q, specialization="true",
+                               monkeypatch=monkeypatch)
+    assert cqm["frameworks"] == ["CHARMS"]
+    assert cqm["primary_intent"] == "prediction_model"
+    assert picott["question_subtype"] == "prediction_model"
+    assert clinical_queries_category(picott) == "clinical_prediction_guides"
+
+
+@pytest.mark.asyncio
+async def test_rule2b_leaves_a_plain_prognosis_question_alone(monkeypatch):
+    """Specialization must only fire on an actual specific signal."""
+    q = "What is the prognosis of idiopathic pulmonary fibrosis?"
+    off, _ = await _route(q, specialization="false", monkeypatch=monkeypatch)
+    on, _ = await _route(q, specialization="true", monkeypatch=monkeypatch)
+    assert off["frameworks"] == on["frameworks"] == ["PFO"]
+
+
+def test_rule2b_specialization_table_is_same_family_and_closed_set():
+    """Every entry must be a real ClinicalIntent, and no key may be one
+    of the coarse fallbacks Rule 2 already handles.
+    """
+    from services.pipeline import _CQM_INTENT_SPECIALIZATIONS
+    from services.clinical_question_map import ACTIVE_INTENTS
+
+    for coarse, specifics in _CQM_INTENT_SPECIALIZATIONS.items():
+        assert coarse in ACTIVE_INTENTS, coarse
+        assert coarse not in {"background_overview", "therapy"}, (
+            f"{coarse} is a Rule 2 fallback; Rule 2b must not duplicate it"
+        )
+        for s in specifics:
+            assert s in ACTIVE_INTENTS, s
+            assert s != coarse
+
+
+def test_rule2b_flag_is_off_by_default(monkeypatch):
+    from services.pipeline import _intent_specialization_enabled
+
+    monkeypatch.delenv("CQM_INTENT_SPECIALIZATION_ENABLED", raising=False)
+    assert _intent_specialization_enabled() is False
+    for on in ("1", "true", "yes", "on", "TRUE"):
+        monkeypatch.setenv("CQM_INTENT_SPECIALIZATION_ENABLED", on)
+        assert _intent_specialization_enabled() is True
+
+
 def test_qw6_shadow_block_is_exposed_by_the_admin_diagnostics_endpoint():
     """A shadow diagnostic nobody can read is not a shadow rollout.
 
