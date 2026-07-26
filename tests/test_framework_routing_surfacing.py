@@ -810,6 +810,80 @@ def test_qw2b_card_missing_framework_is_rebuilt_when_cqm_exists():
     ) is True
 
 
+def test_qw6_would_change_reflects_the_effective_write_not_the_proposal(monkeypatch):
+    """Regression from the FIRST PRODUCTION SOAK.
+
+    Real session 7686961c (therapy): the parser had found
+    ``question_subtype="treatment_sequencing"`` and the intent table
+    proposes ``None`` for plain ``therapy``. Active mode does NOT
+    overwrite with None — but ``would_change`` compared the raw
+    proposal to the baseline and reported ``true``. The soak therefore
+    read "8/8 sessions would change" when several were no-ops, which is
+    exactly the evidence you would use to decide whether to flip to
+    active.
+    """
+    from services.pipeline import _apply_cqm_type_reconciliation
+
+    cqm = {"primary_intent": "therapy", "frameworks": ["PICOTT"],
+           "clinical_validity": True}
+
+    monkeypatch.setenv("CQM_TYPE_RECONCILIATION_MODE", "shadow")
+    payload = _picott(type_of_question="therapy",
+                      question_subtype="treatment_sequencing",
+                      question_scope="foreground")
+    diag = _apply_cqm_type_reconciliation(picott_payload=payload, cqm_json=cqm)
+    assert diag["proposed_question_subtype"] is None
+    assert diag["effective_question_subtype"] == "treatment_sequencing"
+    assert diag["would_change"] is False, "no-op must not report a change"
+
+    # ...and active mode must genuinely leave it alone, proving the
+    # shadow prediction was right.
+    monkeypatch.setenv("CQM_TYPE_RECONCILIATION_MODE", "active")
+    payload2 = _picott(type_of_question="therapy",
+                       question_subtype="treatment_sequencing",
+                       question_scope="foreground")
+    before = dict(payload2)
+    _apply_cqm_type_reconciliation(picott_payload=payload2, cqm_json=cqm)
+    for k in ("type_of_question", "question_subtype", "question_scope"):
+        assert payload2[k] == before[k], k
+
+
+def test_qw6_would_change_still_true_for_a_real_move(monkeypatch):
+    """Real session 1c2831bc (prevalence) — this one genuinely moves."""
+    from services.pipeline import _apply_cqm_type_reconciliation
+
+    monkeypatch.setenv("CQM_TYPE_RECONCILIATION_MODE", "shadow")
+    payload = _picott(type_of_question="background", question_subtype=None,
+                      question_scope="background")
+    diag = _apply_cqm_type_reconciliation(
+        picott_payload=payload,
+        cqm_json={"primary_intent": "epidemiology_prevalence_incidence",
+                  "frameworks": ["CoCoPop"], "clinical_validity": True},
+    )
+    assert diag["would_change"] is True
+    assert diag["proposed_type_of_question"] == "epidemiology"
+    assert diag["proposed_question_scope"] == "hybrid"
+
+
+def test_qw6_would_change_true_when_only_the_subtype_is_added(monkeypatch):
+    """Real session 85e3fb57 (dx accuracy): type stays ``diagnosis`` but
+    the subtype goes None -> diagnostic_accuracy. That IS a real change
+    and must stay reported.
+    """
+    from services.pipeline import _apply_cqm_type_reconciliation
+
+    monkeypatch.setenv("CQM_TYPE_RECONCILIATION_MODE", "shadow")
+    payload = _picott(type_of_question="diagnosis", question_subtype=None,
+                      question_scope="foreground")
+    diag = _apply_cqm_type_reconciliation(
+        picott_payload=payload,
+        cqm_json={"primary_intent": "diagnosis_accuracy",
+                  "frameworks": ["PIRD"], "clinical_validity": True},
+    )
+    assert diag["would_change"] is True
+    assert diag["effective_question_subtype"] == "diagnostic_accuracy"
+
+
 def test_qw6_shadow_block_is_exposed_by_the_admin_diagnostics_endpoint():
     """A shadow diagnostic nobody can read is not a shadow rollout.
 

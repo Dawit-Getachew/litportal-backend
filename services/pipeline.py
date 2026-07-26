@@ -335,6 +335,7 @@ def _apply_cqm_type_reconciliation(
         "proposed_type_of_question": None,
         "baseline_question_subtype": None,
         "proposed_question_subtype": None,
+        "effective_question_subtype": None,
         "baseline_question_scope": None,
         "proposed_question_scope": None,
         "would_change": False,
@@ -396,16 +397,35 @@ def _apply_cqm_type_reconciliation(
         baseline_type = picott_payload.get("type_of_question")
         baseline_subtype = picott_payload.get("question_subtype")
         baseline_scope = picott_payload.get("question_scope")
+
+        # ``would_change`` MUST describe what ``active`` mode would
+        # actually do, not what was proposed. The subtype is only
+        # written when the proposal is truthy (a None proposal means
+        # "no opinion", not "clear the parser's value"), so comparing
+        # the raw proposal to the baseline over-reports: a session
+        # whose parser found ``treatment_sequencing`` against a
+        # ``None`` proposal was being flagged ``would_change=true``
+        # while active mode would leave it untouched.
+        #
+        # Observed on the first production soak: 8/8 sessions reported
+        # ``would_change=true``, which reads as "activation rewrites
+        # everything" — several were genuine no-ops. Compare against
+        # the EFFECTIVE value instead so the soak evidence is
+        # trustworthy enough to make a flip-to-active decision on.
+        effective_subtype = (
+            proposed_subtype if proposed_subtype else baseline_subtype
+        )
         diag.update({
             "baseline_type_of_question": baseline_type,
             "proposed_type_of_question": proposed_type,
             "baseline_question_subtype": baseline_subtype,
             "proposed_question_subtype": proposed_subtype,
+            "effective_question_subtype": effective_subtype,
             "baseline_question_scope": baseline_scope,
             "proposed_question_scope": proposed_scope,
             "would_change": bool(
                 baseline_type != proposed_type
-                or baseline_subtype != proposed_subtype
+                or baseline_subtype != effective_subtype
                 or baseline_scope != proposed_scope
             ),
         })
