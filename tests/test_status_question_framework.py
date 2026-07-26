@@ -23,21 +23,26 @@ from services.interpreted_question_display import (
 
 # Mirror of the projection inside ``session_status``. Kept in step by
 # ``test_projection_matches_the_router_implementation`` below.
-_FW_KEYS = (
-    "question_framework", "question_framework_raw",
-    "clinical_intent", "clinical_intent_raw",
-)
-
-
 def _project(doc):
     fw = framework_display_fields(doc)
     picott = doc.get("picott_json") or {}
     parsed_out = doc.get("pico_json") or None
     if isinstance(parsed_out, dict) and parsed_out:
-        parsed_out = {
-            **{k: fw[k] for k in _FW_KEYS},
+        injected = {
+            "question_framework": fw["question_framework"],
+            "question_framework_raw": fw["question_framework_raw"],
+            "question_frameworks": ", ".join(fw["question_frameworks"]) or None,
+            "clinical_intent": fw["clinical_intent"],
+            "clinical_intent_raw": fw["clinical_intent_raw"],
+            "secondary_clinical_intents": (
+                ", ".join(fw["secondary_clinical_intents"]) or None
+            ),
             "type_of_question": picott.get("type_of_question"),
-            **{k: v for k, v in parsed_out.items() if k not in _FW_KEYS},
+            "question_subtype": picott.get("question_subtype"),
+        }
+        parsed_out = {
+            **injected,
+            **{k: v for k, v in parsed_out.items() if k not in injected},
         }
     return {
         "question_framework": {
@@ -139,10 +144,64 @@ def test_framework_keys_come_first_in_parsed():
     than appended after a dozen legacy keys.
     """
     parsed = _project(_doc())["parsed"]
-    assert list(parsed)[:5] == [
-        "question_framework", "question_framework_raw",
-        "clinical_intent", "clinical_intent_raw", "type_of_question",
+    assert list(parsed)[:8] == [
+        "question_framework", "question_framework_raw", "question_frameworks",
+        "clinical_intent", "clinical_intent_raw", "secondary_clinical_intents",
+        "type_of_question", "question_subtype",
     ]
+
+
+_INJECTED_KEYS = (
+    "question_framework", "question_framework_raw", "question_frameworks",
+    "clinical_intent", "clinical_intent_raw", "secondary_clinical_intents",
+    "type_of_question", "question_subtype",
+)
+
+
+@pytest.mark.parametrize("key", _INJECTED_KEYS)
+def test_every_injected_value_is_a_flat_scalar(key):
+    """THE CONTRACT THAT MAKES "no frontend change" TRUE.
+
+    ``parsed`` is rendered as generic key/value rows. A nested dict
+    would display as "[object Object]" and a list as "a,b" — both of
+    which would force a frontend change, defeating the point. Every
+    injected value must therefore be a string or None.
+    """
+    parsed = _project(_doc())["parsed"]
+    val = parsed[key]
+    assert val is None or isinstance(val, str), (
+        f"{key} is {type(val).__name__}; parsed values must stay scalar"
+    )
+
+
+def test_multi_framework_is_joined_not_listed():
+    doc = _doc()
+    doc["clinical_question_map_json"]["frameworks"] = ["PECO", "CoCoPop"]
+    doc["clinical_question_map_json"]["secondary_intents"] = [
+        "epidemiology_prevalence_incidence",
+    ]
+    parsed = _project(doc)["parsed"]
+    assert parsed["question_frameworks"] == "PECO, CoCoPop"
+    assert parsed["secondary_clinical_intents"] == "Epidemiology prevalence incidence"
+    assert isinstance(parsed["question_frameworks"], str)
+
+
+def test_empty_lists_become_none_not_empty_string():
+    """An empty string would render as a blank row; None lets the client
+    skip it.
+    """
+    parsed = _project(_doc(cqm=False))["parsed"]
+    assert parsed["question_frameworks"] is None
+    assert parsed["secondary_clinical_intents"] is None
+
+
+def test_top_level_block_keeps_the_structured_shape():
+    """The scalar flattening applies to ``parsed`` ONLY — the top-level
+    block stays structured for consumers that want it.
+    """
+    qf = _project(_doc())["question_framework"]
+    assert isinstance(qf["frameworks"], list)
+    assert isinstance(qf["secondary_intents"], list)
 
 
 def test_parsed_keeps_every_legacy_key():
@@ -211,4 +270,6 @@ def test_projection_matches_the_router_implementation():
     assert '"framework_label": _fw["question_framework"]' in src
     assert '"parsed": parsed_out,' in src
     # ...and that the legacy keys are still merged in rather than replaced.
-    assert "if k not in _fw_keys" in src
+    assert "if k not in _fw_injected" in src
+    # ...and that lists are joined into scalars before entering ``parsed``.
+    assert '", ".join(_fw["question_frameworks"])' in src

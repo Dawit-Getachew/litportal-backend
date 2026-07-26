@@ -1961,17 +1961,36 @@ async def session_status(session_id: str, current_user: dict = Depends(get_curre
     # that to a dict would break clients doing ``if (!parsed)``.
     parsed_out = doc.get("pico_json") or None
     if isinstance(parsed_out, dict) and parsed_out:
-        _fw_keys = (
-            "question_framework", "question_framework_raw",
-            "clinical_intent", "clinical_intent_raw",
-        )
-        parsed_out = {
-            **{k: _fw[k] for k in _fw_keys},
+        # EVERY injected value is a flat SCALAR (str / None) — never a
+        # nested dict or list. ``parsed`` is rendered generically by the
+        # client as key/value rows, so a nested object would show up as
+        # "[object Object]" and a list as "a,b". Keeping these scalar is
+        # what lets the framework appear with NO frontend change. The
+        # rich structured version lives in the top-level
+        # ``question_framework`` block for structured consumers.
+        _fw_injected = {
+            # Display-ready label, e.g. "PECO" / "CoCoPop" /
+            # "Concept mechanism". Acronym casing is preserved.
+            "question_framework": _fw["question_framework"],
+            # Machine token for conditional styling / icons.
+            "question_framework_raw": _fw["question_framework_raw"],
+            # Multi-intent questions can carry up to 3 frameworks;
+            # joined rather than listed so it stays a scalar.
+            "question_frameworks": ", ".join(_fw["question_frameworks"]) or None,
+            "clinical_intent": _fw["clinical_intent"],
+            "clinical_intent_raw": _fw["clinical_intent_raw"],
+            "secondary_clinical_intents": (
+                ", ".join(_fw["secondary_clinical_intents"]) or None
+            ),
             # The legacy type that actually drives the PubMed
             # publication-type filter. Surfaced next to the framework so
             # the two are never confused for each other.
             "type_of_question": _picott.get("type_of_question"),
-            **{k: v for k, v in parsed_out.items() if k not in _fw_keys},
+            "question_subtype": _picott.get("question_subtype"),
+        }
+        parsed_out = {
+            **_fw_injected,
+            **{k: v for k, v in parsed_out.items() if k not in _fw_injected},
         }
 
     return {
