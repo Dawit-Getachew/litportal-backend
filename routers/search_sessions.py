@@ -37,6 +37,7 @@ from services.full_text_access_broker import full_text_access_broker
 from services.interpreted_question_display import (
     DISPLAY_SCHEMA_VERSION,
     build_interpreted_question_display,
+    framework_display_fields,
     build_m4_interpreted_display,
 )
 from services.phi_guard import USER_PHI_MESSAGE, phi_guard
@@ -1939,12 +1940,60 @@ async def session_status(session_id: str, current_user: dict = Depends(get_curre
         "awaiting_selection", "complete", "error",
         "blocked_phi", "awaiting_clinical_subject",
     }
+    # Question-framework block. The ClinicalQuestionMap has picked a
+    # framework (PECO / PIRD / CoCoPop / PFO / CHARMS / ...) on every
+    # search since Phase K1, but /status only ever returned the legacy
+    # ``pico_json``, which has no notion of one — so a PECO question and
+    # a PICOTT question looked identical to the client and there was no
+    # way to show that the backend had in fact routed it.
+    #
+    # Built from the SAME helper that feeds the clinician interpretation
+    # card (``interpreted_question_display.framework_display_fields``) so
+    # the two surfaces can never disagree.
+    #
+    # PURELY ADDITIVE: no existing key is removed, renamed or retyped.
+    _fw = framework_display_fields(doc)
+    _picott = doc.get("picott_json") or {}
+
+    # ``parsed`` stays the legacy ``pico_json`` shape, with the framework
+    # keys prepended so they are the first thing visible in the payload.
+    # ``None`` is preserved when there is no pico_json at all — flipping
+    # that to a dict would break clients doing ``if (!parsed)``.
+    parsed_out = doc.get("pico_json") or None
+    if isinstance(parsed_out, dict) and parsed_out:
+        _fw_keys = (
+            "question_framework", "question_framework_raw",
+            "clinical_intent", "clinical_intent_raw",
+        )
+        parsed_out = {
+            **{k: _fw[k] for k in _fw_keys},
+            # The legacy type that actually drives the PubMed
+            # publication-type filter. Surfaced next to the framework so
+            # the two are never confused for each other.
+            "type_of_question": _picott.get("type_of_question"),
+            **{k: v for k, v in parsed_out.items() if k not in _fw_keys},
+        }
+
     return {
         "status": status,
         "stage": stage_map.get(status, status),
         "progress": progress_map.get(status, 0),
         "done": terminal,
-        "parsed": doc.get("pico_json") or None,
+        # Authoritative, self-contained framework block. Always present
+        # (fields are None / "Not specified" for legacy sessions), so a
+        # client can render the badge without depending on ``parsed``
+        # being non-null.
+        "question_framework": {
+            "framework": _fw["question_framework_raw"],
+            "framework_label": _fw["question_framework"],
+            "frameworks": _fw["question_frameworks"],
+            "intent": _fw["clinical_intent_raw"],
+            "intent_label": _fw["clinical_intent"],
+            "secondary_intents": _fw["secondary_clinical_intents"],
+            "type_of_question": _picott.get("type_of_question"),
+            "question_subtype": _picott.get("question_subtype"),
+        },
+        "parsed": parsed_out,
         "evaluator": doc.get("evaluator_json"),
         "counts": counts,
         "articles_ready": articles_ready,

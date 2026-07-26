@@ -71,7 +71,7 @@ def _humanize_clinical_intent(intent: Any) -> str:
     return s.replace("_", " ").strip().capitalize()
 
 
-def _framework_display_fields(session_doc: dict) -> dict[str, Any]:
+def framework_display_fields(session_doc: dict) -> dict[str, Any]:
     """Framework / intent fields from the persisted ClinicalQuestionMap.
 
     The CQM has been computed live on every search since Phase K1 and
@@ -741,7 +741,7 @@ def build_interpreted_question_display(session_doc: dict) -> dict[str, Any]:
             "has_picott": True,
             "display_schema_version": DISPLAY_SCHEMA_VERSION,
             # Framework / intent badges from the ClinicalQuestionMap.
-            **_framework_display_fields(session_doc),
+            **framework_display_fields(session_doc),
             # Top-line badges (Phase 5F.1 cascade)
             "question_scope": _humanize_question_scope(scope_cascaded),
             "type_of_question": _humanize_type_of_question(
@@ -834,7 +834,7 @@ def build_interpreted_question_display(session_doc: dict) -> dict[str, Any]:
         "display_schema_version": DISPLAY_SCHEMA_VERSION,
         # The CQM is built independently of PICOTT, so a legacy-only
         # session can still carry a valid framework.
-        **_framework_display_fields(session_doc),
+        **framework_display_fields(session_doc),
         "question_scope": NOT_SPECIFIED,
         "type_of_question": _humanize_type_of_question(legacy_qtype, None),
         "type_of_question_raw": legacy_qtype or "other",
