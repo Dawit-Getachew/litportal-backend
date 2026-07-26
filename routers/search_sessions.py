@@ -1597,6 +1597,7 @@ async def get_session(session_id: str, current_user: dict = Depends(get_current_
     cached_display = doc.get("interpreted_question_display_json")
     _stale_other_paren = False
     _stale_schema_version = False
+    _stale_degraded = False
     if cached_display:
         _cached_toq = (cached_display.get("type_of_question") or "")
         if _cached_toq.startswith("Other (") and _cached_toq.endswith(")"):
@@ -1609,19 +1610,49 @@ async def get_session(session_id: str, current_user: dict = Depends(get_current_
             DISPLAY_SCHEMA_VERSION
         ):
             _stale_schema_version = True
-    if cached_display and not _stale_other_paren and not _stale_schema_version:
+        # POISONED-CACHE HEAL. The card is built lazily on GET and then
+        # persisted. Clients poll this endpoint while the pipeline is
+        # still running, so the FIRST poll routinely lands before
+        # ``picott_json`` / ``clinical_question_map_json`` have been
+        # written — producing a fully-degraded card
+        # (``has_picott: False``, ``source: "legacy_pico_json"``,
+        # every badge "Not specified") that is then cached and served
+        # for the life of the session. Observed live in production on
+        # 6/6 sessions: the CQM had correctly routed each question
+        # (CoCoPop / PIRD / PFO / PICOTT / guideline_stabilization /
+        # concept_mechanism) while the cached card showed nothing.
+        # If the cached card is degraded but the document has since
+        # gained the real artifacts, rebuild.
+        if not cached_display.get("has_picott") and doc.get("picott_json"):
+            _stale_degraded = True
+        if (
+            not cached_display.get("question_framework_raw")
+            and doc.get("clinical_question_map_json")
+        ):
+            _stale_degraded = True
+    if (
+        cached_display
+        and not _stale_other_paren
+        and not _stale_schema_version
+        and not _stale_degraded
+    ):
         body["interpreted_question_display_json"] = cached_display
     else:
         try:
             display = build_interpreted_question_display(doc)
             body["interpreted_question_display_json"] = display
-            await db[Collections.SEARCH_SESSIONS].update_one(
-                {"id": session_id},
-                {"$set": {
-                    "interpreted_question_display_json": display,
-                    "updated_at": datetime.now(timezone.utc),
-                }},
-            )
+            # Only PERSIST once the pipeline has produced the artifacts
+            # the card is built from. Caching a mid-pipeline card is
+            # what poisons the session in the first place; serving it
+            # for this one response is fine, storing it is not.
+            if doc.get("picott_json") or doc.get("clinical_question_map_json"):
+                await db[Collections.SEARCH_SESSIONS].update_one(
+                    {"id": session_id},
+                    {"$set": {
+                        "interpreted_question_display_json": display,
+                        "updated_at": datetime.now(timezone.utc),
+                    }},
+                )
         except Exception:  # noqa: BLE001
             logger.exception(
                 "interpreted_question_display build failed (non-fatal); "

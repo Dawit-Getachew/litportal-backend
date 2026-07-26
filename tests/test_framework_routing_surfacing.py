@@ -719,3 +719,109 @@ def test_qw2_display_schema_version_is_an_int_above_the_implicit_baseline():
 
     assert isinstance(DISPLAY_SCHEMA_VERSION, int)
     assert DISPLAY_SCHEMA_VERSION >= 2
+
+
+# =====================================================================
+# QW2b — poisoned-cache heal
+#
+# Found in PRODUCTION, not in a unit test: the interpretation card is
+# built lazily on GET and then persisted. Clients poll GET while the
+# pipeline is still running, so the first poll lands before
+# picott_json / clinical_question_map_json exist, producing a fully
+# degraded card that is cached and served forever. All 6 live sessions
+# had correctly routed frameworks in the CQM and an empty card.
+#
+# These tests encode the two staleness predicates the read path uses.
+# =====================================================================
+def _degraded_card():
+    """What the card looks like when built mid-pipeline."""
+    from services.interpreted_question_display import (
+        DISPLAY_SCHEMA_VERSION,
+        build_interpreted_question_display,
+    )
+
+    card = build_interpreted_question_display(
+        {"picott_json": {}, "pico_json": {}, "clinical_question_map_json": None}
+    )
+    assert card["has_picott"] is False
+    assert card["source"] == "legacy_pico_json"
+    assert card["question_framework_raw"] is None
+    assert card["display_schema_version"] == DISPLAY_SCHEMA_VERSION
+    return card
+
+
+def _is_stale(cached, doc):
+    """Mirror of the read-path predicate in routers/search_sessions.py."""
+    from services.interpreted_question_display import DISPLAY_SCHEMA_VERSION
+
+    if not cached:
+        return True
+    toq = cached.get("type_of_question") or ""
+    if toq.startswith("Other (") and toq.endswith(")"):
+        return True
+    if int(cached.get("display_schema_version") or 1) != int(DISPLAY_SCHEMA_VERSION):
+        return True
+    if not cached.get("has_picott") and doc.get("picott_json"):
+        return True
+    if not cached.get("question_framework_raw") and doc.get(
+        "clinical_question_map_json"
+    ):
+        return True
+    return False
+
+
+def test_qw2b_degraded_card_is_rebuilt_once_picott_lands():
+    cached = _degraded_card()
+    doc_midflight = {"picott_json": {}, "clinical_question_map_json": None}
+    doc_finished = {
+        "picott_json": {"type_of_question": "prognosis"},
+        "clinical_question_map_json": {
+            "primary_intent": "prognosis_natural_history",
+            "frameworks": ["PFO"],
+        },
+    }
+    # Mid-pipeline there is nothing better to build from — keep serving.
+    assert _is_stale(cached, doc_midflight) is False
+    # Once the real artifacts exist, the degraded card must be rebuilt.
+    assert _is_stale(cached, doc_finished) is True
+
+
+def test_qw2b_healthy_card_is_not_needlessly_rebuilt():
+    from services.interpreted_question_display import (
+        build_interpreted_question_display,
+    )
+
+    doc = _session_doc()
+    good = build_interpreted_question_display(doc)
+    assert good["has_picott"] is True
+    assert good["question_framework_raw"] == "PFO"
+    assert _is_stale(good, doc) is False
+
+
+def test_qw2b_card_missing_framework_is_rebuilt_when_cqm_exists():
+    """Covers the deploy-time case: sessions cached by the previous
+    build carry a card with no framework at all.
+    """
+    cached = _degraded_card()
+    cached["has_picott"] = True  # isolate the framework predicate
+    assert cached.get("question_framework_raw") is None
+    assert _is_stale(
+        cached, {"clinical_question_map_json": {"frameworks": ["CoCoPop"]}}
+    ) is True
+
+
+def test_qw2b_no_persist_before_the_artifacts_exist():
+    """The write guard: a mid-pipeline card must not be stored.
+
+    Mirrors ``if doc.get("picott_json") or doc.get("clinical_question_map_json")``
+    in the read path — storing a mid-pipeline card is what poisons the
+    session.
+    """
+    def should_persist(doc):
+        return bool(
+            doc.get("picott_json") or doc.get("clinical_question_map_json")
+        )
+
+    assert should_persist({"picott_json": {}, "clinical_question_map_json": None}) is False
+    assert should_persist({"picott_json": {"type_of_question": "therapy"}}) is True
+    assert should_persist({"clinical_question_map_json": {"frameworks": ["PIRD"]}}) is True
