@@ -636,11 +636,8 @@ def _resolve_cors_origins() -> list[str]:
     """
     operator_allowlist = [
         # Explicit, credentials-safe origins only (allow_credentials=True forbids "*").
-        "https://med-evidence-qa.preview.emergentagent.com",       # active preview (frontend/.env)
-        "https://clinician-answers.emergent.host",                 # CANONICAL PRODUCTION (current)
-        "https://clinician-answers.preview.emergentagent.com",     # preview for current app
-        "https://clinevidence-core.emergent.host",                 # legacy/stale production (kept until reattached)
-        "https://clinevidence-core.preview.emergentagent.com",     # legacy preview
+        "http://litportal.litcurrent.com",                         # production (HTTP, pre-SSL)
+        "https://litportal.litcurrent.com",                        # production (HTTPS, post-SSL)
     ]
     raw = (os.environ.get("CORS_ORIGINS") or "").strip()
     env_origins = [
