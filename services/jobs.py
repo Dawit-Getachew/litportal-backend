@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Optional
 
 from core.db import Collections, get_db
-from models.jobs import JOB_RESULT_REF_KEYS, JobDoc, JobStatus, JobType
+from models.jobs import JOB_RESULT_REF_KEYS, JobDoc, JobType
 
 logger = logging.getLogger("clinevidence.jobs")
 

@@ -43,7 +43,6 @@ from services.r1a_directness_labels import (
     detect_labels_for_shape,
 )
 from services.r1a_shadow_simulator import (
-    K4A_OWNED_SUBTYPES,
     _overrank_counts,
 )
 from services.r1b_query_expansion import (
@@ -286,7 +285,8 @@ def _gold_rank_in(
 ) -> Optional[int]:
     dset = {str(d or "").strip().lower() for d in (gold_dois or [])}
     pset = {str(p or "").strip() for p in (gold_pmids or [])}
-    dset.discard(""); pset.discard("")
+    dset.discard("")
+    pset.discard("")
     if not dset and not pset:
         return None
     best: Optional[int] = None

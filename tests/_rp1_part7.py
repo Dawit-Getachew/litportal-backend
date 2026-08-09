@@ -1,7 +1,11 @@
 """Phase RankPrecision-1 — Part 7: fresh prostate prognosis session, off-disease
 score>=60 count (after gate), wrong_condition caps, R2A + ImpactRank rerun."""
 from __future__ import annotations
-import asyncio, json, os, re, time
+import asyncio
+import json
+import os
+import re
+import time
 import requests
 from core.db import Collections, get_db
 
@@ -60,7 +64,7 @@ async def main():
         other_in_title = [c for c in OTHER if c.strip() in tl]
         if other_in_title and not target_in_title:
             offdz60.append((r.get("overall_rank"), (a.get("title") or "")[:70], other_in_title, r.get("cap_reasons")))
-    print(f"\n=== RANKER PRECISION ===")
+    print("\n=== RANKER PRECISION ===")
     print(f"total_rows={len(rows)} included>=60={len(incl60)} wrong_condition_caps={len(wrong_cond)}", flush=True)
     print(f"OFF-DISEASE score>=60 (other cancer in title, prostate NOT in title) = {len(offdz60)} (was 7 before gate)", flush=True)
     for s, t, oth, caps in offdz60[:12]:

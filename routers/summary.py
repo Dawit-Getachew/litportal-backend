@@ -20,11 +20,11 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from core.db import Collections, get_db
 from core.security import get_current_user, require_admin

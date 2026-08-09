@@ -14,7 +14,6 @@ is mapped from the legacy ``clinical_question_type`` plus extra heuristics
 from __future__ import annotations
 
 import re
-from dataclasses import asdict
 from typing import Any
 
 from models.picott import PICOTT, PICOBlocks, SpellingCorrection
@@ -24,7 +23,6 @@ from services.concept_expansion import (
     IMAGING_DECOY_TERMS,
     applicable_specialty_packs,
     expand_concept,
-    expand_concepts,
     neurocrit_dosing_context_terms,
     neurocrit_ranking_terms,
 )

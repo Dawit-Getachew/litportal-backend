@@ -24,7 +24,6 @@ can tune them without code changes.
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -258,7 +257,7 @@ def _build_for_source(
     pub_type_block = (_epmc_pub_type_block(type_of_q) if source == "europe_pmc"
                       else _pubmed_pub_type_block(type_of_q))
     if source == "pubmed":
-        date_recent = f'AND ("last 5 years"[PDat])'
+        date_recent = 'AND ("last 5 years"[PDat])'
     else:
         date_recent = 'AND (FIRST_PDATE:[NOW-5YEARS TO NOW])'
 
@@ -322,7 +321,7 @@ def _build_for_source(
             optional_terms=blocks.get("context", [])[:8],
             rationale=(
                 "Concept-block AND across mandatory roles "
-                f"(intervention/condition/population). Preprints excluded."
+                "(intervention/condition/population). Preprints excluded."
             ),
             max_results=DEFAULT_QUOTAS["high_precision"],
         ))

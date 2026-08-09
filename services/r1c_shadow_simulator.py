@@ -18,13 +18,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Optional
 
-import httpx
 
 from core.db import Collections, get_db
 from services.audit import audit_service
 from services.m3_1_benchmark import leak_scan_passes
 from services.r1a_directness_labels import (
-    R1A_ALL_LABELS,
     compute_recency_base_score,
     compute_shadow_score,
     detect_labels_for_shape,
@@ -39,7 +37,6 @@ from services.r1b_query_expansion import (
 from services.r1b_shadow_simulator import (
     BROAD_FAMILY_ONLY_PENALTY_MULTIPLIER,
     HIGH_PRECISION_SHAPES,
-    R1B_SOURCES,
     _article_identity_keys,
     _deep_check_no_forbidden_fields,
     _fetch_via_connectors,

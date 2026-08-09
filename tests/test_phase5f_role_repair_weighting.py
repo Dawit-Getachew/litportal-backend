@@ -23,7 +23,6 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from services.clinical_role_repair import (  # noqa: E402
-    ClinicalRoleRepairService,
     clinical_role_repair,
 )
 from services.role_weighting import (  # noqa: E402

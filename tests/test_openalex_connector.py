@@ -157,7 +157,8 @@ async def test_openalex_title_search_requires_similarity_and_year():
     assert stats["enrichments_applied"] == 0
 
     # Now a high-similarity match with year off by 5 — must be rejected.
-    art2 = dict(art); art2["canonical_key"] = "x"
+    art2 = dict(art)
+    art2["canonical_key"] = "x"
     far_year = {
         "results": [{
             "id": "https://openalex.org/W2",

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
 
 from services.mesh import mesh_resolver
 from services.query_compiler import (

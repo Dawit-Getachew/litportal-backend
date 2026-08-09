@@ -101,7 +101,7 @@ async def test_collection_mirror_sends_durable_marker(client, monkeypatch):
 # ── 2. The /tree endpoint ────────────────────────────────────────────
 async def test_collections_tree_endpoint(client, auth):
     db = get_db()
-    uid = await _me_id(client, auth)
+    await _me_id(client, auth)
     # parent collection + child + one paper each.
     r = await client.post("/api/research-collections", json={"name": "Cardiology"}, headers=auth)
     parent = r.json()["id"]

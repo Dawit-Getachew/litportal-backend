@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.k3a2_seed_search_corpus import (  # noqa: E402
-    main as _seed_main, SEED_QUESTIONS as _BASE,
+    main as _seed_main,
 )
 # Monkey-patch in a second wave of topics, then call the existing
 # main() so the harness is reused.

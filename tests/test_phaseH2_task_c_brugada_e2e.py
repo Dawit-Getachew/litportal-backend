@@ -255,7 +255,7 @@ def test_anchor_service_what_is_psoriasis_definition_fastpath_intact():
 
 def test_anchor_service_generic_only_clarification_still_fires():
     q = "what are the recommendations?"
-    out = anchor_service.derive(picott={}, ontology_mappings=[], normalized_question=q)
+    anchor_service.derive(picott={}, ontology_mappings=[], normalized_question=q)
     # The generic-only detector still labels this true even though the
     # condition-branch router doesn't match (no inherited-arrhythmia
     # token in the captured slot). This guarantees the generic-only

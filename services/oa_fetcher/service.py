@@ -30,7 +30,6 @@ from core.db import Collections, get_db
 from services.audit import audit_service
 
 from .cache import (
-    CACHE_DAYS,
     clone_cache_to_session,
     lookup_article_cache,
     write_cache_rows,
@@ -423,8 +422,8 @@ class OAFetcherService:
         db = get_db()
         now = _now()
         url = (
-            f"https://www.ebi.ac.uk/europepmc/article/PMC/" if source == "europe_pmc_oa"
-            else f"https://pmc.ncbi.nlm.nih.gov/articles/"
+            "https://www.ebi.ac.uk/europepmc/article/PMC/" if source == "europe_pmc_oa"
+            else "https://pmc.ncbi.nlm.nih.gov/articles/"
         )
         existing = await db[Collections.ARTICLE_ACCESS_LOCATIONS].find_one({
             "article_id": article_id, "search_session_id": session_id,

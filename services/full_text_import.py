@@ -425,11 +425,14 @@ class FullTextImportService:
         sids = dict(art.get("source_ids_json") or {})
         changed_sids = False
         if candidate.get("pmid") and not sids.get("pubmed"):
-            sids["pubmed"] = candidate["pmid"]; changed_sids = True
+            sids["pubmed"] = candidate["pmid"]
+            changed_sids = True
         if candidate.get("doi") and not sids.get("doi"):
-            sids["doi"] = normalize_doi(candidate["doi"]) or candidate["doi"]; changed_sids = True
+            sids["doi"] = normalize_doi(candidate["doi"]) or candidate["doi"]
+            changed_sids = True
         if candidate.get("pmcid") and not sids.get("pmc"):
-            sids["pmc"] = candidate["pmcid"]; changed_sids = True
+            sids["pmc"] = candidate["pmcid"]
+            changed_sids = True
         if changed_sids:
             update["source_ids_json"] = sids
         if update:

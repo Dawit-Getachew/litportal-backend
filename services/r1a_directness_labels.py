@@ -19,7 +19,6 @@ sidecar; only ITS LABEL OUTPUTS are), ``publication_types_json``,
 """
 from __future__ import annotations
 
-import re
 from typing import Any, Iterable
 
 # ---------------------------------------------------------------------

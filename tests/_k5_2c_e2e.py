@@ -1,5 +1,7 @@
 """K5.2C-0 preview e2e — real search → confirm Cochrane lane on article rows."""
-import sys, time, json
+import sys
+import time
+import json
 import httpx
 
 sys.path.insert(0, "/app/backend")

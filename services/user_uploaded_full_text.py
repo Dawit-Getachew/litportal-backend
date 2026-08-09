@@ -26,7 +26,7 @@ from pypdf.errors import PdfReadError, PyPdfError
 from core.db import Collections, get_client, get_db
 from services.audit import audit_service
 from services.malware_scan import malware_scan_service
-from services.uploads import RIGHTS_ATTESTATION_VERSION, USER_MESSAGES
+from services.uploads import USER_MESSAGES
 from services.uploads.safety_scanner import scan_user_added_surfaces
 
 logger = logging.getLogger("clinevidence.uploads")

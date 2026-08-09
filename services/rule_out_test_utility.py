@@ -513,11 +513,6 @@ def classify_diagnostic_directness(
     is_sr = bool(_SR_RE.search(blob)) or any(
         "systematic review" in p for p in pub_types
     )
-    is_review_shape = (
-        is_sr or is_diag_meta
-        or any(p.strip() == "review" or p.strip().startswith("review ")
-               for p in pub_types)
-    )
     is_colonization_only = bool(_COLONIZATION_ONLY_RE.search(blob)) and not has_pneumonia
     is_treatment_only = (
         bool(_TREATMENT_ONLY_RE.search(blob))

@@ -9,7 +9,6 @@ path (`GET /api/search-sessions/{id}`,
 """
 from __future__ import annotations
 
-import importlib
 import json
 import os
 import sys

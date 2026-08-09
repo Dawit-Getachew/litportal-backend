@@ -26,8 +26,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.k3a2_seed_search_corpus import main as _seed_main
-import scripts.k3a2_seed_search_corpus as _seed_mod
+from scripts.k3a2_seed_search_corpus import main as _seed_main  # noqa: E402
+import scripts.k3a2_seed_search_corpus as _seed_mod  # noqa: E402
 
 
 _seed_mod.SEED_QUESTIONS = (

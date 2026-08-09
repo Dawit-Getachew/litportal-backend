@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from xml.etree import ElementTree as ET
 
-import pytest
 
 from services.oa_fetcher.section_parser import (
     extract_bioc_license,

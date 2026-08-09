@@ -26,7 +26,6 @@ from services.query_compiler import boolean_query_compiler  # noqa: E402
 from services.query_stop_phrases import (  # noqa: E402
     STOP_TOKENS,
     is_query_term_meaningful,
-    strip_stop_phrases,
 )
 
 

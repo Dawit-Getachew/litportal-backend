@@ -144,7 +144,7 @@ def _role_weights_for_qtype(toq: str | None) -> dict[str, int]:
     back to ``"other"`` weights if the type is unknown. Returns a fresh
     copy (caller may mutate)."""
     try:
-        from services.role_weighting import ROLE_WEIGHTS  # noqa: WPS433
+        pass  # noqa: WPS433
     except Exception:  # noqa: BLE001
         return {}
 

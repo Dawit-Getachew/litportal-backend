@@ -9,7 +9,6 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-import pytest_asyncio
 
 from core.db import Collections, get_db
 from models.common import new_id, utcnow

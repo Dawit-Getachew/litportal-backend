@@ -5,28 +5,38 @@ verifies M4 falls back to baseline retrieval (no partial promotion, no
 crash) with the closed-set reason ``m4_latency_timeout``.
 Preview only. Requires M4_ACTIVE_MAX_LATENCY_MS set low + backend restart.
 """
-import asyncio, json, time, urllib.request, urllib.error
+import asyncio
+import json
+import time
+import urllib.request
+import urllib.error
 from core.db import get_db, Collections
 
 API = None
 for line in open("/app/frontend/.env").read().splitlines():
     if line.startswith("REACT_APP_BACKEND_URL"):
-        API = line.split("=", 1)[1].strip().strip('"'); break
+        API = line.split("=", 1)[1].strip().strip('"')
+        break
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
 PROC = {"searching","queued","ranking","brokering_access","fetching","fetching_oa_full_text",
         "planning","retrieving","scoring","deduplicating",None}
 
 def req(m,p,tok=None,body=None):
     r=urllib.request.Request(API+p,data=json.dumps(body).encode() if body is not None else None,method=m)
-    r.add_header("Content-Type","application/json"); r.add_header("User-Agent",UA)
-    if tok: r.add_header("Authorization","Bearer "+tok)
+    r.add_header("Content-Type","application/json")
+    r.add_header("User-Agent",UA)
+    if tok:
+        r.add_header("Authorization","Bearer "+tok)
     try:
         with urllib.request.urlopen(r,timeout=60) as x:
-            raw=x.read().decode(); return json.loads(raw) if raw.strip() else {}
+            raw=x.read().decode()
+            return json.loads(raw) if raw.strip() else {}
     except urllib.error.HTTPError as e:
         raw=e.read().decode()
-        try: return json.loads(raw) if raw.strip() else {}
-        except Exception: return {"_raw":raw[:200]}
+        try:
+            return json.loads(raw) if raw.strip() else {}
+        except Exception:
+            return {"_raw":raw[:200]}
 
 async def main():
     tok=req("POST","/api/auth/login",None,{"email":"clinician@test.com","password":"ClinicianTest123!"}).get("access_token")
@@ -37,7 +47,8 @@ async def main():
     while time.time()<deadline:
         time.sleep(5)
         st=req("GET","/api/search-sessions/"+sid,tok).get("status")
-        if st not in PROC: break
+        if st not in PROC:
+            break
         print("polling status=",st,flush=True)
     db=get_db()
     doc=await db[Collections.SEARCH_SESSIONS].find_one({"id":sid},{"_id":0})

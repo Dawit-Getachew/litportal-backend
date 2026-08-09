@@ -108,9 +108,6 @@ def adjudicate_wave1(record: dict[str, Any]) -> dict[str, Any]:
     When ``detector_defect`` is non-None the caller MUST treat the
     row as a detector-defect discovery, NOT as a false-positive.
     """
-    # Closed-set null defect by default.
-    defect: str | None = None
-
     join = str(record.get("article_join_status") or "stable")
     wbe_codes_raw = (
         record.get("would_have_been_excluded_reason_codes") or []

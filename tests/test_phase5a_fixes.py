@@ -7,8 +7,6 @@ Fix 4: PHI-blocked diagnostics returns 403
 """
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timedelta, timezone
 
 import pytest
 

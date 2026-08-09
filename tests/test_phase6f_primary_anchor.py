@@ -17,9 +17,7 @@ the test runner).
 from __future__ import annotations
 
 import asyncio
-import re
 
-import pytest
 
 from services.clinical_context_engine import build_clinical_context
 from services.clinical_question_parser import clinical_question_parser
@@ -28,7 +26,6 @@ from services.default_selection import (
     EXCLUSION_REASONS,
     select_default_articles,
 )
-from services.picott_extractor import picott_extractor
 from services.picott_ranker import CAP_REASONS, picott_aware_ranker
 from services.primary_clinical_anchor import (
     CLARIFICATION_MESSAGE,

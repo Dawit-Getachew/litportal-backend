@@ -2,7 +2,9 @@
 NOT over-cap non-target / non-cancer / protected / guideline questions, and
 keeps cancer prognosis sessions clean (off-disease score>=60 ~ 0)."""
 from __future__ import annotations
-import asyncio, os, re, time
+import asyncio
+import os
+import time
 import requests
 from core.db import Collections, get_db
 
@@ -52,7 +54,8 @@ async def main():
         for sid in list(pending):
             stt = requests.get(f"{API}/search-sessions/{sid}/status", headers=auth(tok), timeout=30).json().get("status")
             if stt not in PROC:
-                final[sid] = stt; pending.discard(sid)
+                final[sid] = stt
+                pending.discard(sid)
     for sid in pending:
         final[sid] = "TIMEOUT"
 
@@ -61,7 +64,9 @@ async def main():
     ok = True
     for label, q, kind, sites, sid in jobs:
         if not sid:
-            print(f"[{label}] CREATE-FAIL"); ok = False; continue
+            print(f"[{label}] CREATE-FAIL")
+            ok = False
+            continue
         rows = await db[Collections.SEARCH_SESSION_ARTICLES].find({"search_session_id": sid}, {"_id": 0, "overall_rank": 1, "article_id": 1, "cap_reasons": 1}).to_list(length=400)
         incl = [r for r in rows if (r.get("overall_rank") or 0) >= 60]
         wc = sum(1 for r in rows if "wrong_condition" in (r.get("cap_reasons") or []))
@@ -71,7 +76,8 @@ async def main():
             if st not in ("awaiting_selection", "completed", "ready", "awaiting_clinical_subject") or len(incl) == 0:
                 # foreground/cancer/guideline should have a non-empty included set
                 if not (kind == "foreground" and st == "awaiting_clinical_subject"):
-                    verdict = "FAIL-EMPTY"; ok = False
+                    verdict = "FAIL-EMPTY"
+                    ok = False
         if kind == "generic":
             if st != "awaiting_clinical_subject":
                 verdict = "WARN-status"

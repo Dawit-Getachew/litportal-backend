@@ -19,11 +19,9 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 
-from core.db import Collections, get_db
 from services.benchmark_recommendation import (
     RECOMMENDATION_VALUES,
     compute_recommendation,

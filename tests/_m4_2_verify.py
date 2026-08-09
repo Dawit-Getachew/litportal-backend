@@ -10,7 +10,11 @@ Runs the M3/M4 semantic + safety cases through the live preview pipeline
   * M3.2 does NOT co-fire and writes NO new m3_2_session_decisions rows.
 Preview only. Production untouched.
 """
-import asyncio, json, time, urllib.request, urllib.error
+import asyncio
+import json
+import time
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from core.db import get_db, Collections
 from services.m4_active_feature_flags import is_m4_mongo_kill_engaged
@@ -18,22 +22,28 @@ from services.m4_active_feature_flags import is_m4_mongo_kill_engaged
 API = None
 for line in open("/app/frontend/.env").read().splitlines():
     if line.startswith("REACT_APP_BACKEND_URL"):
-        API = line.split("=", 1)[1].strip().strip('"'); break
+        API = line.split("=", 1)[1].strip().strip('"')
+        break
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
 PROC = {"searching","queued","ranking","brokering_access","fetching","fetching_oa_full_text",
         "planning","retrieving","scoring","deduplicating",None}
 
 def req(m,p,tok=None,body=None):
     r=urllib.request.Request(API+p,data=json.dumps(body).encode() if body is not None else None,method=m)
-    r.add_header("Content-Type","application/json"); r.add_header("User-Agent",UA)
-    if tok: r.add_header("Authorization","Bearer "+tok)
+    r.add_header("Content-Type","application/json")
+    r.add_header("User-Agent",UA)
+    if tok:
+        r.add_header("Authorization","Bearer "+tok)
     try:
         with urllib.request.urlopen(r,timeout=60) as x:
-            raw=x.read().decode(); return json.loads(raw) if raw.strip() else {}
+            raw=x.read().decode()
+            return json.loads(raw) if raw.strip() else {}
     except urllib.error.HTTPError as e:
         raw=e.read().decode()
-        try: return json.loads(raw) if raw.strip() else {}
-        except Exception: return {"_raw":raw[:200]}
+        try:
+            return json.loads(raw) if raw.strip() else {}
+        except Exception:
+            return {"_raw":raw[:200]}
 
 # (tag, question, expectation)
 CASES = [
@@ -60,7 +70,8 @@ CASES = [
 
 async def collect(db, sid):
     doc=await db[Collections.SEARCH_SESSIONS].find_one({"id":sid},{"_id":0})
-    if not doc: return {"_missing":True}
+    if not doc:
+        return {"_missing":True}
     sdj=doc.get("session_diagnostics_json") or {}
     m4a=sdj.get("m4_active") or {}
     sar=sdj.get("semantic_anchor_repair") or {}
@@ -85,7 +96,7 @@ async def main():
     print("kill engaged (should be False = preview default-on):", await is_m4_mongo_kill_engaged(), flush=True)
     db=get_db()
     n_m3_2_before=await db[Collections.M3_2_SESSION_DECISIONS].count_documents({})
-    n_sem_before=await db[Collections.M4_SHADOW_DECISIONS].count_documents({"phase":"M"}) \
+    await db[Collections.M4_SHADOW_DECISIONS].count_documents({"phase":"M"}) \
         if hasattr(Collections,"M4_SHADOW_DECISIONS") else None
     print("m3_2_session_decisions BEFORE:", n_m3_2_before, flush=True)
     tok=req("POST","/api/auth/login",None,{"email":"clinician@test.com","password":"ClinicianTest123!"}).get("access_token")
@@ -105,14 +116,16 @@ async def main():
     results=[]
     for c in created:
         rec=dict(c)
-        if c["sid"]: rec["data"]=await collect(db,c["sid"])
+        if c["sid"]:
+            rec["data"]=await collect(db,c["sid"])
         results.append(rec)
     n_m3_2_after=await db[Collections.M3_2_SESSION_DECISIONS].count_documents({})
     ts=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out={"m3_2_before":n_m3_2_before,"m3_2_after":n_m3_2_after,"results":results}
     json.dump(out,open(f"/tmp/m4_2_verify_{ts}.json","w"),indent=2,default=str)
     print("m3_2_session_decisions AFTER:", n_m3_2_after, "(delta:", n_m3_2_after-n_m3_2_before, ")", flush=True)
-    print("RESULTS_FILE=/tmp/m4_2_verify_%s.json"%ts,flush=True); print("DONE",flush=True)
+    print("RESULTS_FILE=/tmp/m4_2_verify_%s.json"%ts,flush=True)
+    print("DONE",flush=True)
 
 if __name__ == "__main__":
     asyncio.run(main())

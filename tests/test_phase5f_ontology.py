@@ -20,12 +20,9 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from services.clinical_ontology_mapper import (  # noqa: E402
-    ClinicalOntologyMapperService,
-    OntologyMapping,
     clinical_ontology_mapper,
 )
 from services.clinical_shorthand_normalizer import (  # noqa: E402
-    clinical_shorthand_normalizer,
     normalize_shorthand,
 )
 

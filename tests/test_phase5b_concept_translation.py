@@ -12,7 +12,6 @@ G. Regression — no "No matching evidence found"; existing invariants hold
 """
 from __future__ import annotations
 
-import asyncio
 import os
 
 import pytest

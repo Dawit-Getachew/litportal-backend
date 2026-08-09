@@ -3,14 +3,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 
 from core.db import Collections, get_db
 from tests._phase3_helpers import signup
-from tests.fixtures_oa_xml import BIOC_SAMPLE, JATS_SAMPLE, PMC_OA_SVC_OK
 
 
 async def _seed(client, headers, *, n=3, pmcid_prefix="PMC"):

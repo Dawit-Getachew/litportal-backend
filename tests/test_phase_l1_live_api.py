@@ -9,7 +9,6 @@ here are deliberately PHI / generic, so no PubMed retrieval is needed).
 from __future__ import annotations
 
 import os
-import time
 
 import pytest
 import requests

@@ -35,7 +35,6 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
 from services.semantic_repair_active_config import (
-    SEMANTIC_REPAIR_ACTIVE_SHAPE_LABELS,
     SemanticRepairActiveConfig,
 )
 

@@ -17,7 +17,6 @@ from xml.etree import ElementTree as ET
 import httpx
 
 from .section_parser import (
-    ParsedSection,
     extract_jats_license,
     parse_jats,
 )

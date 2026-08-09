@@ -29,8 +29,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 from urllib.parse import quote, urlencode
 
 import httpx

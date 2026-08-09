@@ -8,7 +8,6 @@ missing-anchor Cochrane reviews receive NO rescue).
 """
 from __future__ import annotations
 
-import copy
 
 from models.guideline_sources import GuidelineSourceDoc
 from services.cochrane_lane import (
@@ -136,7 +135,8 @@ def test_applicable_for_therapy_strong():
 
 
 def test_diagnosis_strong():
-    p = _therapy_picott(); p["type_of_question"] = "diagnosis"
+    p = _therapy_picott()
+    p["type_of_question"] = "diagnosis"
     assert cochrane_boost_tier(p) == "strong"
     assert cochrane_query_applicable(p) is True
 
@@ -151,14 +151,16 @@ def test_drug_safety_subtype_tier():
 
 
 def test_prognosis_moderate():
-    p = _therapy_picott(); p["type_of_question"] = "prognosis"
+    p = _therapy_picott()
+    p["type_of_question"] = "prognosis"
     assert cochrane_boost_tier(p) == "moderate"
     assert cochrane_boost_points(p) == 5
     assert cochrane_query_applicable(p) is True
 
 
 def test_background_weak_and_not_query_applicable():
-    p = _therapy_picott(); p["type_of_question"] = "background"
+    p = _therapy_picott()
+    p["type_of_question"] = "background"
     assert cochrane_boost_tier(p) == "weak"
     assert cochrane_boost_points(p) == 2
     # weak lane: boost may still apply if a Cochrane review is otherwise
@@ -168,7 +170,8 @@ def test_background_weak_and_not_query_applicable():
 
 def test_guideline_and_cost_none():
     for t in ("guideline", "cost", "other"):
-        p = _therapy_picott(); p["type_of_question"] = t
+        p = _therapy_picott()
+        p["type_of_question"] = t
         assert cochrane_boost_tier(p) == "none"
         assert cochrane_boost_points(p) == 0
         assert cochrane_query_applicable(p) is False
@@ -178,7 +181,8 @@ def test_boost_is_bounded():
     # Hard upper bound across all lanes is the strong tier (8).
     for t in ("therapy", "prevention", "diagnosis", "prognosis",
               "etiology_harm", "background", "guideline", "cost", "other"):
-        p = _therapy_picott(); p["type_of_question"] = t
+        p = _therapy_picott()
+        p["type_of_question"] = t
         assert 0 <= cochrane_boost_points(p) <= 8
 
 
@@ -202,13 +206,15 @@ def test_cochrane_family_not_emitted_for_europe_pmc():
 
 
 def test_cochrane_family_not_emitted_for_background():
-    p = _therapy_picott(); p["type_of_question"] = "background"
+    p = _therapy_picott()
+    p["type_of_question"] = "background"
     out = boolean_query_compiler.compile(p, sources=["pubmed"])
     assert not [q for q in out if q.query_family == "cochrane_review"]
 
 
 def test_cochrane_family_not_emitted_without_anchors():
-    p = _therapy_picott(); p["must_have_concepts"] = []
+    p = _therapy_picott()
+    p["must_have_concepts"] = []
     out = boolean_query_compiler.compile(p, sources=["pubmed"])
     assert not [q for q in out if q.query_family == "cochrane_review"]
 

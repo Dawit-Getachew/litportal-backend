@@ -166,11 +166,13 @@ def _picott_terms_for_mapping(picott: dict[str, Any]) -> list[str]:
     for mh in (picott.get("must_have_concepts") or []):
         t = (mh.get("concept") or "").strip()
         if t and t.lower() not in seen:
-            seen.add(t.lower()); out.append(t)
+            seen.add(t.lower())
+            out.append(t)
     for rc in (picott.get("ranking_concepts") or []):
         t = (rc.get("concept") or "").strip()
         if t and t.lower() not in seen:
-            seen.add(t.lower()); out.append(t)
+            seen.add(t.lower())
+            out.append(t)
     # Also map the PICO block contents.
     pico = picott.get("pico") or {}
     for k in (
@@ -179,7 +181,8 @@ def _picott_terms_for_mapping(picott: dict[str, Any]) -> list[str]:
     ):
         for s in (pico.get(k) or []):
             if s and s.lower() not in seen:
-                seen.add(s.lower()); out.append(s)
+                seen.add(s.lower())
+                out.append(s)
     return out
 
 
@@ -288,15 +291,18 @@ def _lift_ontology_into_picott(
         for s in (m.get("synonyms") or []) + (m.get("acronyms") or []):
             sl = (s or "").strip()
             if sl and sl.lower() not in seen_syn:
-                seen_syn.add(sl.lower()); syns.append(sl)
+                seen_syn.add(sl.lower())
+                syns.append(sl)
         for s in (m.get("mesh_terms") or []):
             sl = (s or "").strip()
             if sl and sl.lower() not in seen_syn:
-                seen_syn.add(sl.lower()); syns.append(sl)
+                seen_syn.add(sl.lower())
+                syns.append(sl)
         for s in (m.get("rxnorm_terms") or []):
             sl = (s or "").strip()
             if sl and not sl.isdigit() and sl.lower() not in seen_syn:
-                seen_syn.add(sl.lower()); syns.append(sl)
+                seen_syn.add(sl.lower())
+                syns.append(sl)
 
         new_concept = {
             "concept": canonical,

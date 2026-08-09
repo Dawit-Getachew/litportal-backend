@@ -19,22 +19,16 @@ fixture — no real LLM call leaves the test process.
 """
 from __future__ import annotations
 
-import asyncio
 import json
-import os
-import re
-from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
 from services.clinical_context_resolver import (
-    CONFIDENCE_THRESHOLD,
     REJECTION_REASONS,
     SKIPPED_REASONS,
     SYSTEM_PROMPT,
     ClinicalContextResolverOutput,
-    ResolverDecision,
     clinical_context_resolver,
     current_mode,
     validate_output,

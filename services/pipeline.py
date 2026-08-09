@@ -55,12 +55,7 @@ from services.clinical_question_map import (
     SCHEMA_VERSION as _CQM_SCHEMA_VERSION,
     ACTIVE_INTENTS as _CQM_ACTIVE_INTENTS,
     DEFERRED_INTENTS as _CQM_DEFERRED_INTENTS,
-    ACTIVE_FRAMEWORKS as _CQM_ACTIVE_FRAMEWORKS,
-    Branch as _CQMBranch,
     ClinicalQuestionMap as _CQM,
-    DeterministicSignalSummary as _CQMSignalSummary,
-    InferredConcept as _CQMInferredConcept,
-    Slot as _CQMSlot,
     normalize_slot_semantics as _cqm_normalize_slot_semantics,
 )
 from services.branch_aware_boolean_query_planner import (

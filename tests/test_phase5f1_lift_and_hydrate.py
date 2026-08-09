@@ -91,7 +91,7 @@ class TestFix1_OntologyLift:
         # Mirrored into pico block.
         assert "GLP-1 receptor agonists" in picott["pico"]["intervention_or_exposure_or_index_test"]
         # ontology_lifts entry recorded.
-        glp1_lift = next(l for l in lifts if l["canonical_term"] == "GLP-1 receptor agonists")
+        glp1_lift = next(lift for lift in lifts if lift["canonical_term"] == "GLP-1 receptor agonists")
         assert glp1_lift["role"] == "intervention"
         assert glp1_lift["reason"] == "LLM omitted concept; lifted from ontology hit"
         # Outcome also lifted.
@@ -119,9 +119,9 @@ class TestFix1_OntologyLift:
         )
         # Semaglutide already exists as a synonym of GLP-1 RAs → NOT
         # lifted again. LDL-C is unrelated → IS lifted.
-        glp1_lifts = [l for l in lifts if l["canonical_term"] == "GLP-1 receptor agonists"]
+        glp1_lifts = [lift for lift in lifts if lift["canonical_term"] == "GLP-1 receptor agonists"]
         assert glp1_lifts == [], glp1_lifts
-        ldl_lifts = [l for l in lifts if l["canonical_term"] == "LDL-C"]
+        ldl_lifts = [lift for lift in lifts if lift["canonical_term"] == "LDL-C"]
         assert ldl_lifts, "LDL-C should still be lifted"
         # LLM concept preserved (not overridden).
         sem = next(m for m in picott["must_have_concepts"]

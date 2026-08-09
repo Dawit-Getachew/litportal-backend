@@ -12,7 +12,6 @@ from services.r1c_anchor_labels import (
     CASE_ANCHOR_CONFIG,
     MECHANISM_TARGET_LABELS,
     PROCEDURE_OUTCOME_LABELS,
-    PROCEDURE_WRONG_OUTCOME_TERMS_FOR_CASE,
     R1C_ALL_LABELS,
     R1C_LABEL_MULTIPLIERS,
     compute_r1c_multiplier,

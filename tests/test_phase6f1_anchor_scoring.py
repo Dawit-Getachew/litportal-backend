@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
 
 from services.clinical_context_engine import build_clinical_context
 from services.clinical_question_parser import clinical_question_parser

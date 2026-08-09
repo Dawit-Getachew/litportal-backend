@@ -12,7 +12,6 @@ from services.evidence_ranker import _humanize_qtype_from_picott
 from services.default_selection import select_default_articles
 from services.interpretation_canonical import (
     canonical_question_type,
-    canonical_label_for_rank_explanation,
 )
 
 

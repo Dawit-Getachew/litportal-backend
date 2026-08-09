@@ -9,7 +9,6 @@ cleaner-than-baseline, central-anchor preservation, and canonicalization.
 """
 from __future__ import annotations
 
-import copy
 
 import services.m4_full_question_interpreter as m4
 
