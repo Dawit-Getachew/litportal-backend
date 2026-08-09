@@ -865,79 +865,12 @@ async def _dispatch_summary_job(
     )
 
     async def _runner() -> None:
-        await job_service.mark_running(
-            job_id=job["id"], stage="preparing_evidence_packet",
-            current_step=1, percent=10,
+        await execute_summary_job(
+            job_id=job["id"],
+            session_id=session_id,
+            current_user=current_user,
+            body=body,
         )
-        try:
-            await job_service.update_progress(
-                job_id=job["id"], stage="drafting_summary",
-                current_step=2, percent=40,
-            )
-            result = await _run_generate(session_id, current_user, body)
-        except HTTPException as exc:
-            detail = exc.detail if isinstance(exc.detail, dict) else {"detail": str(exc.detail)}
-            reason = str(detail.get("reason") or "internal_error")[:64]
-            msg = str(detail.get("detail") or "Summary generation failed.")[:240]
-            await job_service.fail(
-                job_id=job["id"], error_code=reason, error_message_safe=msg,
-                result_ref={"session_id": session_id, "failed_reason_code": reason,
-                             "user_message_code": reason},
-            )
-            return
-        except Exception:  # noqa: BLE001
-            logger.exception("summary job %s crashed", job["id"])
-            await job_service.fail(
-                job_id=job["id"], error_code="internal_error",
-                error_message_safe="Summary generation failed with an internal error.",
-                result_ref={"session_id": session_id,
-                             "user_message_code": "internal_error"},
-            )
-            return
-
-        if isinstance(result, JSONResponse):
-            await job_service.fail(
-                job_id=job["id"], error_code="llm_not_configured",
-                error_message_safe="Summarization is not configured.",
-                result_ref={"session_id": session_id,
-                             "user_message_code": "llm_not_configured"},
-            )
-            return
-
-        await job_service.update_progress(
-            job_id=job["id"], stage="verifying_citations",
-            current_step=3, percent=80,
-        )
-
-        if result.get("status") == "passed":
-            await job_service.succeed(
-                job_id=job["id"],
-                result_ref={
-                    "summary_id": result.get("summary_id"),
-                    "session_id": session_id,
-                    "verification_attempts": int(result.get("verification_attempts") or 0),
-                    "model_provider": result.get("model_provider"),
-                    "summary_model": result.get("summary_model"),
-                    "verifier_model": result.get("verifier_model"),
-                    "prompt_version": result.get("prompt_version"),
-                },
-                stage="complete", percent=100,
-            )
-        else:
-            # Verification failed — DO NOT leak the draft. The job result only
-            # carries a closed-set reason code + a safe user message code.
-            await job_service.fail(
-                job_id=job["id"],
-                error_code="verification_failed",
-                error_message_safe=SAFE_FAILURE_USER_MESSAGE,
-                result_ref={
-                    "session_id": session_id,
-                    "failed_reason_code": result.get("failed_reason_code"),
-                    "verification_attempts": int(result.get("verification_attempts") or 0),
-                    "user_message_code": "verification_failed",
-                },
-                stage="verification_failed", percent=100,
-            )
 
     job_service.dispatch(job_id=job["id"], runner=_runner, job_type="summary_generation")
     return {
@@ -945,6 +878,121 @@ async def _dispatch_summary_job(
         "status": "queued",
         "session_id": session_id,
     }
+
+
+async def execute_summary_job(
+    *,
+    job_id: str,
+    session_id: str,
+    current_user: dict,
+    body: GenerateSummaryBody,
+) -> None:
+    """Run one summary-generation job end to end against its durable job row.
+
+    Extracted from the in-process dispatch closure so the same code path runs
+    unchanged whether it is driven by the FastAPI background task or by the
+    SQS worker in ``jobs/summary_generation.py`` (SOW1 Phase 1).
+    """
+    await job_service.mark_running(
+        job_id=job_id, stage="preparing_evidence_packet",
+        current_step=1, percent=10,
+    )
+    try:
+        await job_service.update_progress(
+            job_id=job_id, stage="drafting_summary",
+            current_step=2, percent=40,
+        )
+        result = await _run_generate(session_id, current_user, body)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, dict) else {"detail": str(exc.detail)}
+        reason = str(detail.get("reason") or "internal_error")[:64]
+        msg = str(detail.get("detail") or "Summary generation failed.")[:240]
+        await job_service.fail(
+            job_id=job_id, error_code=reason, error_message_safe=msg,
+            result_ref={"session_id": session_id, "failed_reason_code": reason,
+                         "user_message_code": reason},
+        )
+        return
+    except Exception:  # noqa: BLE001
+        logger.exception("summary job %s crashed", job_id)
+        await job_service.fail(
+            job_id=job_id, error_code="internal_error",
+            error_message_safe="Summary generation failed with an internal error.",
+            result_ref={"session_id": session_id,
+                         "user_message_code": "internal_error"},
+        )
+        return
+
+    if isinstance(result, JSONResponse):
+        await job_service.fail(
+            job_id=job_id, error_code="llm_not_configured",
+            error_message_safe="Summarization is not configured.",
+            result_ref={"session_id": session_id,
+                         "user_message_code": "llm_not_configured"},
+        )
+        return
+
+    await job_service.update_progress(
+        job_id=job_id, stage="verifying_citations",
+        current_step=3, percent=80,
+    )
+
+    if result.get("status") == "passed":
+        await job_service.succeed(
+            job_id=job_id,
+            result_ref={
+                "summary_id": result.get("summary_id"),
+                "session_id": session_id,
+                "verification_attempts": int(result.get("verification_attempts") or 0),
+                "model_provider": result.get("model_provider"),
+                "summary_model": result.get("summary_model"),
+                "verifier_model": result.get("verifier_model"),
+                "prompt_version": result.get("prompt_version"),
+            },
+            stage="complete", percent=100,
+        )
+    else:
+        # Verification failed — DO NOT leak the draft. The job result only
+        # carries a closed-set reason code + a safe user message code.
+        await job_service.fail(
+            job_id=job_id,
+            error_code="verification_failed",
+            error_message_safe=SAFE_FAILURE_USER_MESSAGE,
+            result_ref={
+                "session_id": session_id,
+                "failed_reason_code": result.get("failed_reason_code"),
+                "verification_attempts": int(result.get("verification_attempts") or 0),
+                "user_message_code": "verification_failed",
+            },
+            stage="verification_failed", percent=100,
+        )
+
+
+async def run_summary_job_for_worker(
+    *,
+    job_id: str,
+    user_id: str,
+    session_id: str,
+    selected_article_ids: list[str] | None = None,
+    acknowledge_abstract_only_limitations: bool = False,
+) -> None:
+    """Queue-worker entry point (SOW1 Phase 1).
+
+    Rebuilds the two request-shaped arguments the job body expects from the
+    flat SQS payload, then runs the identical code path as the in-process
+    dispatch. Kept here — beside the logic it drives — so the two cannot drift.
+    """
+    await execute_summary_job(
+        job_id=job_id,
+        session_id=session_id,
+        current_user={"id": user_id},
+        body=GenerateSummaryBody(
+            selected_article_ids=selected_article_ids,
+            acknowledge_abstract_only_limitations=(
+                acknowledge_abstract_only_limitations
+            ),
+        ),
+    )
 
 
 @router.post("/search-sessions/{session_id}/generate-summary")
