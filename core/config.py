@@ -15,6 +15,33 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(ROOT_DIR / ".env")
 
 
+class ConfigurationError(RuntimeError):
+    """Raised at import time when required configuration is missing."""
+
+
+def _required(env_name: str, *, why: str) -> str:
+    """Read a mandatory variable, or fail with an actionable message.
+
+    Uvicorn surfaces import-time errors as a bare traceback, so a raw KeyError
+    here reads as ``KeyError: 'MONGO_URL'`` with no indication that the fix is
+    to create a .env file.
+    """
+    val = (os.environ.get(env_name) or "").strip()
+    if val:
+        return val
+    env_path = ROOT_DIR / ".env"
+    hint = (
+        f"copy the template first:  cp .env.example .env   (looked in {env_path})"
+        if not env_path.exists()
+        else f"add it to {env_path} (or export it)"
+    )
+    raise ConfigurationError(
+        f"{env_name} is required but not set. {why}\n"
+        f"  Fix: {hint}\n"
+        f"  See .env.example — every [REQUIRED] variable must have a value."
+    )
+
+
 def _get_or_generate(env_name: str) -> str:
     val = os.environ.get(env_name, "").strip()
     if not val:
@@ -52,8 +79,12 @@ def _float(env_name: str, default: float) -> float:
 
 class Settings:
     # Database
-    MONGO_URL: str = os.environ["MONGO_URL"]
-    DB_NAME: str = os.environ["DB_NAME"]
+    MONGO_URL: str = _required(
+        "MONGO_URL", why="The backend cannot start without a MongoDB connection string."
+    )
+    DB_NAME: str = _required(
+        "DB_NAME", why="The backend needs the MongoDB database name to use."
+    )
 
     # CORS / runtime env
     CORS_ORIGINS: list[str] = os.environ.get("CORS_ORIGINS", "*").split(",")
