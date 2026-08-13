@@ -38,6 +38,16 @@ if not BASE_URL:
                     BASE_URL = line.split("=", 1)[1].strip().rstrip("/")
     except Exception:
         pass
+if not BASE_URL:
+    # No deployed backend configured (e.g. this CI runner) -- skip the whole
+    # module before any fixture makes a real HTTP call, instead of every
+    # admin_token/clinician_token-dependent test erroring on a bad/unreachable
+    # URL. Matches the guard already used in test_phase2b_live_api.py /
+    # test_phase6f_live_api.py.
+    pytest.skip(
+        "REACT_APP_BACKEND_URL is not configured -- live API tests need a deployed backend",
+        allow_module_level=True,
+    )
 
 ADMIN_EMAIL = "admin@test.com"
 ADMIN_PW = "AdminTest123!"

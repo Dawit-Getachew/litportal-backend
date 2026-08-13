@@ -13,10 +13,17 @@ import os
 import pytest
 import requests
 
-BASE_URL = (
-    os.environ.get("REACT_APP_BACKEND_URL")
-    or "https://med-evidence-qa.preview.emergentagent.com"
-).rstrip("/")
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+if not BASE_URL:
+    # No deployed backend configured (e.g. this CI runner) -- skip the whole
+    # module before any real HTTP call is attempted, rather than falling back
+    # to a hardcoded external preview URL and eating a real network
+    # timeout per request. Matches the guard already used in
+    # test_phase2b_live_api.py / test_phase6f_live_api.py.
+    pytest.skip(
+        "REACT_APP_BACKEND_URL is not configured -- live API tests need a deployed backend",
+        allow_module_level=True,
+    )
 
 CLINICIAN_EMAIL = "clinician@test.com"
 CLINICIAN_PASSWORD = "ClinicianTest123!"
