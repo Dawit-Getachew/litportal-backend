@@ -84,12 +84,29 @@ jobs:
       # Actions run 31686390589 sat `in_progress` for 4h46m before being
       # manually cancelled -- app-deploy.yml's `lint-and-test` job had no
       # timeout-minutes at all (GitHub's unset default is 6h), so nothing would
-      # have stopped it before then. That default is now bounded at the
-      # workflow level (`test-timeout-minutes`, default 20) -- if a real,
-      # healthy `-n auto` run of this suite still needs longer than that,
-      # raise this repo's `test-timeout-minutes` override rather than letting
-      # it silently fall back to the 6h GitHub default again. This does NOT fix
-      # the suite's own slow/hanging tests (several "*_live_api.py" files look
+      # have stopped it before then.
+      #
+      # Bounded in two passes the same day: first with a single JOB-level
+      # `timeout-minutes: 20` on `lint-and-test`, which turned out to cancel
+      # the ENTIRE job (Lint + Test + setup, and by extension skipped
+      # build-scan-push/deploy too) at 20 minutes even on a healthy run --
+      # a job-level timeout can't be masked by continue-on-error the way a
+      # step-level one can, so it was stopping the whole pipeline, not just
+      # bounding the hang it was meant to catch. Fixed by splitting
+      # app-deploy.yml's single input into `test-timeout-minutes` (STEP-level,
+      # only on Test, default 10 -- masked by `test-continue-on-error: true`
+      # below exactly like a normal pytest failure, so a Test step that hits
+      # this cap still lets build-scan-push/deploy run) and
+      # `job-timeout-minutes` (JOB-level outer backstop, default 45, covers a
+      # genuine hang in checkout/install/Lint that continue-on-error can't
+      # help with). Neither is overridden here -- both defaults already fit
+      # this repo. If a real, healthy `-n auto` run of this suite needs longer
+      # than 10 minutes for a full/passing signal, raise this repo's own
+      # `test-timeout-minutes` override rather than accepting a partial run
+      # every time; for now, partial-but-fast is preferred over
+      # complete-but-blocking while `test-continue-on-error` is already true
+      # for the unrelated collection-error reason below. This does NOT fix the
+      # suite's own slow/hanging tests (several "*_live_api.py" files look
       # like they make real unmocked external calls -- e.g.
       # test_phase6c_live_api.py errors instead of skipping cleanly the way
       # test_phase6d_live_api.py does) -- that's Scienthesis-owned test-suite
