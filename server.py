@@ -527,6 +527,13 @@ async def lifespan(app: FastAPI):
     app.state.lithub_sweeper_task = asyncio.create_task(
         outbox_sweeper_loop(app.state.lithub_sweeper_stop),
     )
+    # Stale search-session reaper (interim safeguard for job 2 until the ECS
+    # worker path lands — R1). Disable with SESSION_REAPER_ENABLED=0.
+    from services.session_reaper import session_reaper_loop
+    app.state.session_reaper_stop = asyncio.Event()
+    app.state.session_reaper_task = asyncio.create_task(
+        session_reaper_loop(app.state.session_reaper_stop),
+    )
     try:
         # Phase 6F.2 closeout — Atlas-resilient index bootstrap. The
         # ``ensure_indexes`` function is itself idempotent + tolerant
@@ -606,6 +613,13 @@ async def lifespan(app: FastAPI):
         app.state.lithub_sweeper_task.cancel()
     except Exception:  # noqa: BLE001
         logger.exception("lithub sweeper shutdown failed (non-fatal)")
+    try:
+        app.state.session_reaper_stop.set()
+        await asyncio.wait_for(app.state.session_reaper_task, timeout=5.0)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        app.state.session_reaper_task.cancel()
+    except Exception:  # noqa: BLE001
+        logger.exception("session reaper shutdown failed (non-fatal)")
     try:
         await app.state.http_client.aclose()
     except Exception:  # noqa: BLE001

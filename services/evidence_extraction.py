@@ -247,7 +247,13 @@ class EvidenceExtractionService:
             "metadata_only_count": with_no_text,
             "total_extract_sections": ready_for_summary_sections_count,
             "total_token_estimate": total_tokens,
-            "ready_for_summary": ready and (session.get("status") in ("awaiting_selection", "complete")),
+            # "summarizing" is accepted so a crash mid-summary does not leave
+            # the session permanently unretryable (SQS redelivery would poison)
+            "ready_for_summary": ready
+            and (
+                session.get("status")
+                in ("awaiting_selection", "complete", "summarizing")
+            ),
             "block_reason": (
                 None if ready and session.get("status") == "awaiting_selection"
                 else "session_expired" if session.get("deleted_at")

@@ -379,8 +379,26 @@ class OAFetcherService:
                     force_refresh=force_refresh, client=client,
                 )
 
-        fetched = await asyncio.gather(*(_one(a) for a in to_fetch)) if to_fetch else []
-        results: list[dict[str, Any]] = list(fetched)
+        fetched = (
+            await asyncio.gather(*(_one(a) for a in to_fetch), return_exceptions=True)
+            if to_fetch
+            else []
+        )
+        # fetch_for_article is documented never-raises; if that contract is ever
+        # broken, one bad article must not void the whole batch's writes.
+        results: list[dict[str, Any]] = []
+        for aid, r in zip(to_fetch, fetched):
+            if isinstance(r, BaseException):
+                logger.error("oa_fetch_unexpected_exception article=%s: %r", aid, r)
+                results.append({
+                    "article_id": aid, "status": "failed",
+                    "source": None, "license": None, "license_category": None,
+                    "can_ingest_for_summary": False, "sections_created": 0,
+                    "token_count": 0, "evidence_text_level": None,
+                    "error_code": "unexpected_exception",
+                })
+            else:
+                results.append(r)
         for aid in overflow:
             results.append({
                 "article_id": aid, "status": "skipped_cap_exceeded",

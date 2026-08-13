@@ -212,3 +212,23 @@ async def test_packet_updates_after_patch_user_included(client):
     p2 = r2.json()
     assert p2["selected_articles_count"] == 2
     assert p2["ready_for_summary"] is True
+
+
+@pytest.mark.asyncio
+async def test_summarizing_session_is_retryable(client):
+    """A crash mid-summary leaves status='summarizing'; the packet must stay
+    ready so a retry (user or SQS redelivery) is not permanently rejected."""
+    from core.db import get_db
+
+    token, _ = await signup(client, "pkt-retry@test.com")
+    h = {"Authorization": f"Bearer {token}"}
+    sid, _, _ = await make_packet_session(client, h, articles=good_apixaban_articles())
+    r = await client.post(f"/api/search-sessions/{sid}/prepare-evidence-packet", headers=h)
+    assert r.json()["ready_for_summary"] is True
+
+    await get_db()["search_sessions"].update_one(
+        {"id": sid}, {"$set": {"status": "summarizing"}}
+    )
+    r2 = await client.post(f"/api/search-sessions/{sid}/prepare-evidence-packet", headers=h)
+    assert r2.status_code == 200
+    assert r2.json()["ready_for_summary"] is True
