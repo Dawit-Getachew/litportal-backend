@@ -8,11 +8,13 @@ keys containing prose, producing 401s instead of the not-configured path.
 
 from __future__ import annotations
 
-import importlib
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
-from dotenv import dotenv_values, load_dotenv
+from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parent.parent
 ENV_EXAMPLE = ROOT / ".env.example"
@@ -42,16 +44,35 @@ def test_required_variables_have_usable_defaults(parsed):
 
 
 def test_copying_the_template_boots_config():
-    """End-to-end: the values in .env.example are enough to load Settings."""
-    load_dotenv(ENV_EXAMPLE, override=True)
-    import core.config as config
+    """End-to-end: the values in .env.example are enough to load Settings.
 
-    importlib.reload(config)
-    assert config.Settings.MONGO_URL
-    assert config.Settings.DB_NAME
+    Runs in a SUBPROCESS: load_dotenv(override=True) + reload(config) in-process
+    polluted os.environ and Settings for every test that ran afterwards (empty
+    example values like ACCESS_BROKER_TIMEOUT_S= broke unrelated suites).
+    """
+    probe = (
+        "import json, sys\n"
+        "from dotenv import load_dotenv\n"
+        "load_dotenv(sys.argv[1], override=True)\n"
+        "import core.config as config\n"
+        "print(json.dumps({\n"
+        "    'mongo_url': bool(config.Settings.MONGO_URL),\n"
+        "    'db_name': bool(config.Settings.DB_NAME),\n"
+        "    'jwt_is_comment': config.Settings.JWT_ACCESS_SECRET.startswith('#'),\n"
+        "    'jwt_len': len(config.Settings.JWT_ACCESS_SECRET),\n"
+        "}))\n"
+    )
+    run = subprocess.run(
+        [sys.executable, "-c", probe, str(ENV_EXAMPLE)],
+        cwd=ROOT, capture_output=True, text=True, timeout=120,
+    )
+    assert run.returncode == 0, run.stderr[-2000:]
+    result = json.loads(run.stdout.strip().splitlines()[-1])
+    assert result["mongo_url"]
+    assert result["db_name"]
     # Secrets are generated when absent — never the template's comment text.
-    assert not config.Settings.JWT_ACCESS_SECRET.startswith("#")
-    assert len(config.Settings.JWT_ACCESS_SECRET) >= 32
+    assert not result["jwt_is_comment"]
+    assert result["jwt_len"] >= 32
 
 
 def test_missing_required_var_raises_actionable_error(monkeypatch):
