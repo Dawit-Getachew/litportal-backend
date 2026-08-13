@@ -75,7 +75,26 @@ jobs:
       # litportal-backend's lint debt is cleaned up -- don't let this drift
       # into main permanently soft.
       lint-continue-on-error: true
-      test-command: "pytest"
+      # `-n auto` added 2026-08-13 -- this repo's own pytest.ini already
+      # assumes xdist parallelization (`--dist=loadgroup` +
+      # `xdist_group` markers exist specifically to make parallel runs safe
+      # against Mongo shared-state flake, per that file's own comment: "Default
+      # still uses `-n auto` from the developer's invocation"), but CI was
+      # invoking plain `pytest`, running all ~4450 tests serially. Found after
+      # Actions run 31686390589 sat `in_progress` for 4h46m before being
+      # manually cancelled -- app-deploy.yml's `lint-and-test` job had no
+      # timeout-minutes at all (GitHub's unset default is 6h), so nothing would
+      # have stopped it before then. That default is now bounded at the
+      # workflow level (`test-timeout-minutes`, default 20) -- if a real,
+      # healthy `-n auto` run of this suite still needs longer than that,
+      # raise this repo's `test-timeout-minutes` override rather than letting
+      # it silently fall back to the 6h GitHub default again. This does NOT fix
+      # the suite's own slow/hanging tests (several "*_live_api.py" files look
+      # like they make real unmocked external calls -- e.g.
+      # test_phase6c_live_api.py errors instead of skipping cleanly the way
+      # test_phase6d_live_api.py does) -- that's Scienthesis-owned test-suite
+      # debt, flagged to them separately, not something to fix from this repo.
+      test-command: "pytest -n auto"
       # TEMPORARILY ALLOWED TO FAIL (2026-07-24, Lisandro) -- same mechanism
       # as lint-continue-on-error above, for the Test step. Needed here
       # because pytest currently aborts with "Interrupted: 3 errors during
