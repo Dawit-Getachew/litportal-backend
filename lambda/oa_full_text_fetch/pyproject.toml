@@ -1,0 +1,18 @@
+[project]
+name = "litportal-oa-full-text-fetch"
+version = "0.1.0"
+description = "SOW1 amendment worker (A-series) (SQS + Lambda)"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+# "." for src/, ".." so the shared jobs/ contract package resolves the same way
+# it does inside the container image (see Dockerfile).
+pythonpath = [".", "../.."]
+asyncio_mode = "auto"

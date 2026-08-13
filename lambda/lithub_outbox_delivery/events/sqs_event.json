@@ -1,0 +1,15 @@
+{
+  "Records": [
+    {
+      "messageId": "6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c",
+      "receiptHandle": "AQEBwJnKyrHigUMZj6reyNurzo...",
+      "body": "{\"schema_version\": \"1.0\", \"job\": \"litportal.lithub_outbox_delivery\", \"correlation_id\": \"2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d\", \"idempotency_key\": \"lithub_mirror#save#11111111-2222-3333-4444-555555555555#pmid:39123456\", \"enqueued_at\": \"2026-08-13T08:00:00.000Z\", \"producer\": \"litportal-backend\", \"data\": {\"outbox_id\": \"ob1f2e3d4c5b6a798897a6b5c4d3e2f1\", \"op\": \"save\", \"user_id\": \"11111111-2222-3333-4444-555555555555\", \"pmid\": \"39123456\", \"doi\": null}}",
+      "attributes": {"ApproximateReceiveCount": "1", "SentTimestamp": "1786000000000", "SenderId": "AIDAIENQZJOLO23YVJ4VO", "ApproximateFirstReceiveTimestamp": "1786000000001"},
+      "messageAttributes": {},
+      "md5OfBody": "e4e68fb7bd0e697a0ae8f1bb342846b0",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:217794632783:scienthesis-lithub-outbox-delivery",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}
