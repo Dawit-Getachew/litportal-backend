@@ -164,3 +164,180 @@ jobs:
       # deploy-branch=main to sanity-check the normal path still works)
       # without editing this file.
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  # --- Background job (Lambda) deploys -----------------------------------
+  #
+  # 4 of litportal-backend's SQS-triggered Lambda jobs now have real app code
+  # (landed 2026-08-09..13, see CLAUDE.md's "Background job app code landed"
+  # note) but until this change had no CI pipeline at all -- every one of
+  # their ECR repos still held only the original 2026-07-29 placeholder
+  # `:latest` image pushed by hand during the LambdaJobs CDK bootstrap.
+  # `lithub-outbox-delivery` and `oa-full-text-fetch` are the 2 brand-new,
+  # previously CDK-unscoped jobs ("amendment A1"/"A2") registered into
+  # `LAMBDA_JOB_NAMES` on 2026-08-19 -- same shape as the other 8, included
+  # here now that they have real infra to deploy to.
+  #
+  # Each job gets its own job below (not a matrix) for the same reason as
+  # litpulse-backend's equivalent block: `dockerfile`/`ecr-repo-name`/
+  # `function-name`/`deploy-role-arn` all differ per job, and each job needs
+  # its OWN least-privilege deploy role, not litportal-backend's shared
+  # app-service role -- see scienthesis-cdk's src/job-deploy-roles.ts.
+  #
+  # `deploy-role-arn` below is a PLACEHOLDER -- `JobDeployRoles` (built
+  # 2026-08-19, scienthesis-cdk src/job-deploy-roles.ts) has not been
+  # deployed yet (`cdk deploy` is Lisandro's to run). Once deployed, replace
+  # each placeholder with the real `LambdaJobDeployRoleArn-<job-name>`
+  # CfnOutput value -- same fetch-and-paste pattern already used for
+  # litpulse-fe/litportal-fe's deploy-role-arn values. Until then these 4
+  # jobs will fail closed at the OIDC AssumeRoleWithWebIdentity step on any
+  # push to `deploy-branch` (harmless -- lint/test still run and report real
+  # signal; only the build-scan-push/deploy jobs are blocked).
+  #
+  # No `lint-command` here -- confirmed 2026-08-19 that litportal-backend has
+  # no ruff-config excludes at all, so the `ci-cd` job's own
+  # `ruff check . && black --check . && mypy .` above already lints every
+  # real job's `lambda/<job>/` directory. A separate lint-command here would
+  # just re-run the same checks redundantly.
+  #
+  # `test-command` DOES need to be added here -- confirmed 2026-08-19 that
+  # `pytest.ini`'s `testpaths = tests` means the `ci-cd` job's own
+  # `pytest -n auto` step above NEVER collects any `lambda/*/tests/` file, so
+  # without this these 4 jobs' tests get zero CI signal today. Verified
+  # locally (repo-root `pip install -r requirements.txt` into an isolated
+  # venv, then `PYTHONPATH=lambda/<job>:. pytest lambda/<job>/tests/ -v` run
+  # from repo root) that this exact command passes cleanly for all 4 jobs
+  # below, including `lithub_outbox_delivery` (needs the third-party `httpx`
+  # package -- present in this repo's requirements.txt, confirming the
+  # repo-root install is necessary and sufficient). `uv run pytest` (the
+  # jobs' own Makefiles) was tried first and rejected: each job's
+  # `pyproject.toml` declares `dependencies = []`, so `uv run` spins up an
+  # isolated venv with only pytest installed and can't import the shared
+  # `jobs/*.py` modules' real dependencies.
+  deploy-summary-generation:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/lambda-deploy.yml@main
+    with:
+      ecr-repo-name: scienthesis/summary-generation
+      function-name: scienthesis-summary-generation
+      docker-context: "."
+      dockerfile: lambda/summary_generation/Dockerfile
+      # PLACEHOLDER -- paste the real LambdaJobDeployRoleArn-summary-generation
+      # CfnOutput value here once `cdk deploy` has run.
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesLambdaJobDep-QIQfB01dDAMj"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=lambda/summary_generation:. pytest lambda/summary_generation/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  deploy-full-text-import:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/lambda-deploy.yml@main
+    with:
+      ecr-repo-name: scienthesis/full-text-import
+      function-name: scienthesis-full-text-import
+      docker-context: "."
+      dockerfile: lambda/full_text_import/Dockerfile
+      # PLACEHOLDER -- paste the real LambdaJobDeployRoleArn-full-text-import
+      # CfnOutput value here once `cdk deploy` has run.
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesLambdaJobDep-amYWtatFhcRt"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=lambda/full_text_import:. pytest lambda/full_text_import/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  deploy-lithub-outbox-delivery:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/lambda-deploy.yml@main
+    with:
+      ecr-repo-name: scienthesis/lithub-outbox-delivery
+      function-name: scienthesis-lithub-outbox-delivery
+      docker-context: "."
+      dockerfile: lambda/lithub_outbox_delivery/Dockerfile
+      # PLACEHOLDER -- paste the real
+      # LambdaJobDeployRoleArn-lithub-outbox-delivery CfnOutput value here
+      # once `cdk deploy` has run.
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesLambdaJobDep-Jj7iMB1tI4YN"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=lambda/lithub_outbox_delivery:. pytest lambda/lithub_outbox_delivery/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  deploy-oa-full-text-fetch:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/lambda-deploy.yml@main
+    with:
+      ecr-repo-name: scienthesis/oa-full-text-fetch
+      function-name: scienthesis-oa-full-text-fetch
+      docker-context: "."
+      dockerfile: lambda/oa_full_text_fetch/Dockerfile
+      # PLACEHOLDER -- paste the real LambdaJobDeployRoleArn-oa-full-text-fetch
+      # CfnOutput value here once `cdk deploy` has run.
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesLambdaJobDep-JUtNwVoc7N1n"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=lambda/oa_full_text_fetch:. pytest lambda/oa_full_text_fetch/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  # --- Background job (Fargate) deploy: clinician-search-pipeline --------
+  #
+  # litportal-backend's one long-running background job (see
+  # background-jobs.ts) -- an SQS -> EventBridge Pipe -> `ecs:RunTask` chain
+  # that runs `ecs/clinician_search/entrypoint.py` as a Fargate task, batch
+  # passed via the `PIPE_EVENT` container-override env var (contrast with
+  # digest-generation in litpulse-backend, which is Scheduler-triggered, no
+  # queue). Independently verified 2026-08-18 (see CLAUDE.md) that this
+  # entrypoint correctly implements the Pipe/SQS contract already -- unlike
+  # digest-generation, there's no trigger-shape mismatch to resolve here.
+  # Same "no CI at all yet, still holds the 2026-07-29 placeholder `:latest`
+  # image" starting state as the 8 Lambda jobs above. `trigger-type: pipe`
+  # selects the `aws pipes describe-pipe`/`update-pipe` repoint path in
+  # fargate-job-deploy.yml over the Scheduler path.
+  #
+  # `docker-context`/`dockerfile` confirmed 2026-08-19 by reading
+  # `ecs/clinician_search/Dockerfile` directly: repo-root build context
+  # (same convention as the 4 Lambda jobs above), `uv pip install --system
+  # -r requirements.txt` against the repo's one shared requirements.txt.
+  #
+  # `test-command` confirmed 2026-08-19 by actually running
+  # `PYTHONPATH=ecs/clinician_search:. pytest ecs/clinician_search/tests/ -v`
+  # locally against a fresh venv built from requirements.txt -- 11/11
+  # passed. Needed for the same reason as the Lambda jobs: this repo's
+  # pytest.ini (`testpaths = tests`) means the main `ci-cd` job's own test
+  # step never touches `ecs/clinician_search/tests/`. No separate
+  # `lint-command` here, same reasoning as the Lambda jobs above -- this
+  # repo has no ruff-config excludes at all, so the main job's
+  # `ruff check . && black --check . && mypy .` already covers
+  # `ecs/clinician_search/` too.
+  #
+  # `deploy-role-arn` is a placeholder -- paste the real
+  # FargateJobDeployRoleArn-clinician-search-pipeline CfnOutput value here
+  # once `cdk deploy` has run (JobDeployRoles construct,
+  # src/job-deploy-roles.ts).
+  deploy-clinician-search-pipeline:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/fargate-job-deploy.yml@main
+    with:
+      job-name: clinician-search-pipeline
+      trigger-type: pipe
+      docker-context: "."
+      dockerfile: ecs/clinician_search/Dockerfile
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesFargateJobDe-yhJvhBEF08eH"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=ecs/clinician_search:. pytest ecs/clinician_search/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
