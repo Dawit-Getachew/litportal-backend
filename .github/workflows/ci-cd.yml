@@ -99,9 +99,11 @@ jobs:
       # this cap still lets build-scan-push/deploy run) and
       # `job-timeout-minutes` (JOB-level outer backstop, default 45, covers a
       # genuine hang in checkout/install/Lint that continue-on-error can't
-      # help with). Neither is overridden here -- both defaults already fit
-      # this repo. If a real, healthy `-n auto` run of this suite needs longer
-      # than 10 minutes for a full/passing signal, raise this repo's own
+      # help with). `job-timeout-minutes` is left at its default here.
+      # `test-timeout-minutes` is now overridden further down (2026-08-20,
+      # tightened from the 10-minute default to 1) -- see that override's own
+      # comment for why. If a real, healthy `-n auto` run of this suite needs
+      # longer than that cap for a full/passing signal, raise this repo's own
       # `test-timeout-minutes` override rather than accepting a partial run
       # every time; for now, partial-but-fast is preferred over
       # complete-but-blocking while `test-continue-on-error` is already true
@@ -112,6 +114,17 @@ jobs:
       # test_phase6d_live_api.py does) -- that's Scienthesis-owned test-suite
       # debt, flagged to them separately, not something to fix from this repo.
       test-command: "pytest -n auto"
+      # Overridden down from app-deploy.yml's 10-minute default (2026-08-20,
+      # Lisandro) -- test-continue-on-error is already true below (unrelated
+      # collection-error reason), so a hung/slow Test step here was already
+      # being treated as partial-signal-only, not a hard gate. 1 minute caps
+      # how long a slow/serializing run can hold up build-scan-push/deploy
+      # before falling back to that partial signal, at the cost of an even
+      # smaller fraction of the ~4419-test suite actually completing per run.
+      # Scoped to this repo only -- other app-deploy.yml callers
+      # (litpulse-backend, litportal-fe, scienthesis-identity,
+      # scienthesis-lithub) still use the 10-minute default.
+      test-timeout-minutes: 1
       # TEMPORARILY ALLOWED TO FAIL (2026-07-24, Lisandro) -- same mechanism
       # as lint-continue-on-error above, for the Test step. Needed here
       # because pytest currently aborts with "Interrupted: 3 errors during
