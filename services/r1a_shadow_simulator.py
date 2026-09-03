@@ -237,8 +237,8 @@ def compute_shadow_top_n(
         # shadow_score / shadow_rank / sort order.
         mixed = is_mixed_signal(labels)
         # Closed-set split for the admin UI badges.
-        positive_labels = [l for l in labels if l in R1A_POSITIVE_LABELS]
-        indirect_labels = [l for l in labels if l in R1A_INDIRECT_LABELS]
+        positive_labels = [lab for lab in labels if lab in R1A_POSITIVE_LABELS]
+        indirect_labels = [lab for lab in labels if lab in R1A_INDIRECT_LABELS]
         enriched.append({
             **proj,
             "label_set": labels,

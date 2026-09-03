@@ -1,6 +1,9 @@
 """Re-check that non-K4A eligible degraded baselines still APPLY M4 live."""
 from __future__ import annotations
-import asyncio, json, os, time
+import asyncio
+import json
+import os
+import time
 import requests
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -38,7 +41,8 @@ def main():
             time.sleep(4)
 
         async def rd():
-            c = AsyncIOMotorClient(os.environ["MONGO_URL"]); db = c[os.environ["DB_NAME"]]
+            c = AsyncIOMotorClient(os.environ["MONGO_URL"])
+            db = c[os.environ["DB_NAME"]]
             d = await db["search_sessions"].find_one({"id": sid}, {"_id": 0, "session_diagnostics_json": 1})
             c.close()
             return ((d or {}).get("session_diagnostics_json") or {}).get("m4_active") or {}

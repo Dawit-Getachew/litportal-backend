@@ -14,7 +14,6 @@ clarification_message and NO external API / LLM calls.
 """
 from __future__ import annotations
 
-import asyncio
 
 import pytest
 

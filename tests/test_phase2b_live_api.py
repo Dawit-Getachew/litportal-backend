@@ -44,7 +44,11 @@ def _resolve_base_url() -> str:
                 line = line.strip()
                 if line.startswith("REACT_APP_BACKEND_URL"):
                     return line.split("=", 1)[1].strip().strip('"').rstrip("/")
-    raise RuntimeError("REACT_APP_BACKEND_URL not configured")
+    pytest.skip(
+        "REACT_APP_BACKEND_URL not configured — live API tests need a "
+        "deployed backend",
+        allow_module_level=True,
+    )
 
 
 BASE_URL = _resolve_base_url()

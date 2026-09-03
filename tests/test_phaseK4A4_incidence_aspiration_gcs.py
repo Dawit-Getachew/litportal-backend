@@ -35,7 +35,6 @@ from services.incidence_risk_epidemiology import (
     INCIDENCE_RISK_DIRECTNESS_BOOSTS,
     INCIDENCE_RISK_DIRECTNESS_CAPS,
     INCIDENCE_RISK_DIRECTNESS_RANKED,
-    IncidenceRiskDirectnessLabel,
     aspiration_pneumonia_or_block_synonyms,
     classify_incidence_risk_directness,
     extract_incidence_risk_components,

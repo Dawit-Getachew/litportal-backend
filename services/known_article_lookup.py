@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import os
 import re
-import json
 import logging
 import urllib.parse
 import xml.etree.ElementTree as ET

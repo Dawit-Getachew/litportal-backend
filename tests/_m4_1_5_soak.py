@@ -7,7 +7,11 @@ DISENGAGED), verifying the NEW end-to-end latency instrumentation
 NEVER touches production. Preview only. Read of session diagnostics +
 M4 sidecar; closed-set numeric latency only.
 """
-import asyncio, json, time, urllib.request, urllib.error
+import asyncio
+import json
+import time
+import urllib.request
+import urllib.error
 from datetime import datetime, timezone
 from core.db import get_db, Collections
 from services.m4_active_feature_flags import set_m4_mongo_kill_switch_state
@@ -15,27 +19,34 @@ from services.m4_active_feature_flags import set_m4_mongo_kill_switch_state
 API = None
 for line in open("/app/frontend/.env").read().splitlines():
     if line.startswith("REACT_APP_BACKEND_URL"):
-        API = line.split("=", 1)[1].strip().strip('"'); break
+        API = line.split("=", 1)[1].strip().strip('"')
+        break
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 PROC = {"searching","queued","ranking","brokering_access","fetching","fetching_oa_full_text",
         "planning","retrieving","scoring","deduplicating",None}
 
 def req(m,p,tok=None,body=None):
     r=urllib.request.Request(API+p,data=json.dumps(body).encode() if body is not None else None,method=m)
-    r.add_header("Content-Type","application/json"); r.add_header("User-Agent",UA)
-    if tok: r.add_header("Authorization","Bearer "+tok)
+    r.add_header("Content-Type","application/json")
+    r.add_header("User-Agent",UA)
+    if tok:
+        r.add_header("Authorization","Bearer "+tok)
     try:
         with urllib.request.urlopen(r,timeout=60) as x:
-            raw=x.read().decode(); return json.loads(raw) if raw.strip() else {}
+            raw=x.read().decode()
+            return json.loads(raw) if raw.strip() else {}
     except urllib.error.HTTPError as e:
         raw=e.read().decode()
-        try: return json.loads(raw) if raw.strip() else {}
-        except Exception: return {"_raw":raw[:200]}
+        try:
+            return json.loads(raw) if raw.strip() else {}
+        except Exception:
+            return {"_raw":raw[:200]}
 
 def login(e,p):
     for _ in range(4):
         t=req("POST","/api/auth/login",None,{"email":e,"password":p}).get("access_token")
-        if t: return t
+        if t:
+            return t
         time.sleep(2)
     return None
 
@@ -68,7 +79,8 @@ QUESTIONS = [
 
 async def collect(db, sid):
     doc=await db[Collections.SEARCH_SESSIONS].find_one({"id":sid},{"_id":0})
-    if not doc: return {"_missing":True}
+    if not doc:
+        return {"_missing":True}
     cqm=doc.get("clinical_question_map_json") or {}
     anchors=(doc.get("primary_clinical_anchors_json") or {}).get("primary_anchors") or []
     sdj=doc.get("session_diagnostics_json") or {}
@@ -77,12 +89,16 @@ async def collect(db, sid):
     cand=(sh or {}).get("candidate") or {}
     act=await db[Collections.M4_SHADOW_DECISIONS].find_one({"search_session_id":sid,"phase":{"$in":["M4.1.1","M4.1.3"]}},{"_id":0})
     nart=await db[Collections.SEARCH_SESSION_ARTICLES].count_documents({"search_session_id":sid})
-    psrc={}; fams=set(); qstr=[]
+    psrc={}
+    fams=set()
+    qstr=[]
     cur=db[Collections.SEARCH_QUERIES].find({"search_session_id":sid},{"_id":0,"planner_source":1,"query_family":1,"query_type":1,"query_string":1})
     async for q in cur:
-        ps=q.get("planner_source") or "?"; psrc[ps]=psrc.get(ps,0)+1
+        ps=q.get("planner_source") or "?"
+        psrc[ps]=psrc.get(ps,0)+1
         fams.add(q.get("query_family") or q.get("query_type") or "?")
-        if q.get("query_string"): qstr.append(q["query_string"])
+        if q.get("query_string"):
+            qstr.append(q["query_string"])
     return {
         "status":doc.get("status"),
         "baseline":{"intent":cqm.get("type_of_question"),"framework":cqm.get("framework_list_json") or cqm.get("frameworks"),
@@ -128,11 +144,13 @@ async def main():
     results=[]
     for c in created:
         rec=dict(c)
-        if c["sid"]: rec["data"]=await collect(db,c["sid"])
+        if c["sid"]:
+            rec["data"]=await collect(db,c["sid"])
         results.append(rec)
     ts=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     json.dump(results,open(f"/tmp/m4_1_5_soak_{ts}.json","w"),indent=2,default=str)
-    print("RESULTS_FILE=/tmp/m4_1_5_soak_%s.json"%ts,flush=True); print("DONE",flush=True)
+    print("RESULTS_FILE=/tmp/m4_1_5_soak_%s.json"%ts,flush=True)
+    print("DONE",flush=True)
 
 if __name__ == "__main__":
     asyncio.run(main())

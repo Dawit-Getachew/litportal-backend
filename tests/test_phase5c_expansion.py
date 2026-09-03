@@ -15,8 +15,6 @@ Test groups (per spec):
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import uuid
 from datetime import datetime, timezone
 
@@ -27,7 +25,6 @@ from core.db import Collections, get_db
 from services.scholar_like_expansion import (
     CANDIDATE_SOURCES,
     HTTP_ERROR_CODES,
-    expansion_mode,
     scholar_like_expansion,
 )
 from tests._phase3_helpers import login, signup

@@ -51,7 +51,10 @@ def _resolve_base_url() -> str:
                 return line.split("=", 1)[1].strip().rstrip("/")
     url = os.environ.get("REACT_APP_BACKEND_URL")
     if not url:
-        pytest.skip("REACT_APP_BACKEND_URL is not configured")
+        pytest.skip(
+            "REACT_APP_BACKEND_URL is not configured",
+            allow_module_level=True,
+        )
     return url.rstrip("/")
 
 

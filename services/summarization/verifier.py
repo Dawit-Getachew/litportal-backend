@@ -22,8 +22,6 @@ from .evidence_spans import EvidenceSpan
 from .prompts import VERIFIER_OUTPUT_SHAPE, VERIFIER_SYSTEM_PROMPT
 from .schemas import (
     DraftSummary,
-    IncorrectCitation,
-    UnsupportedClaim,
     VerifierResult,
 )
 

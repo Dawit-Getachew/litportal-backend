@@ -5,7 +5,6 @@ read-time GET surface on /api/search-sessions/{id}.
 """
 from __future__ import annotations
 
-import asyncio
 import re
 import uuid
 from datetime import datetime, timezone

@@ -1,6 +1,8 @@
 """ImpactRank-1.1 — compact M4 timeout consistency probe (READ-ONLY)."""
 from __future__ import annotations
-import asyncio, os, time, json
+import asyncio
+import os
+import time
 import requests
 from core.db import Collections, get_db
 

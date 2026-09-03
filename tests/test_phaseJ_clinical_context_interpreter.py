@@ -26,9 +26,7 @@ from __future__ import annotations
 import pytest
 
 from services.clinical_context_resolver import (
-    ClinicalContextResolverOutput,
     ResolverPrimaryAnchor,
-    ResolverPicottFields,
     REJECTION_REASONS,
     SYSTEM_PROMPT,
     validate_output,

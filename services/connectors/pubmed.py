@@ -95,7 +95,8 @@ def _canonical_key(pmid: str, doi: str, pmcid: str,
         return f"doi:{doi.strip().lower()}"
     if pmcid:
         return f"pmcid:{pmcid}"
-    safe = lambda s: re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:64]
+    def safe(s):
+        return re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:64]
     return (
         f"title_year_journal_firstauthor:"
         f"{safe(title)}_{year or 0}_{safe(journal)[:32]}_{safe(first_author)[:32]}"

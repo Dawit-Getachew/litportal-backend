@@ -22,7 +22,7 @@ weights or R1B configuration.
 from __future__ import annotations
 
 import re
-from typing import Iterable, Optional
+from typing import Iterable
 
 # =====================================================================
 # Closed-set label catalogues.

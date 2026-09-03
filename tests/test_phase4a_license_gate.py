@@ -1,8 +1,6 @@
 """Phase 4A — license gate + eligibility (Task 11 / A)."""
 from __future__ import annotations
 
-import os
-import pytest
 
 from services.oa_fetcher.license_gate import (
     determine_ingest_permission,

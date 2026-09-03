@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse, unquote
 
-import pytest
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:

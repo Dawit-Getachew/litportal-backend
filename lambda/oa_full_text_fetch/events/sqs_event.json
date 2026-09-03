@@ -1,0 +1,15 @@
+{
+  "Records": [
+    {
+      "messageId": "7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d",
+      "receiptHandle": "AQEBwJnKyrHigUMZj6reyNurzo...",
+      "body": "{\"schema_version\": \"1.0\", \"job\": \"litportal.oa_full_text_fetch\", \"correlation_id\": \"3b4c5d6e-7f8a-9b0c-1d2e-3f4a5b6c7d8e\", \"idempotency_key\": \"oa_fetch#art_789#ses_456\", \"enqueued_at\": \"2026-08-13T08:05:00.000Z\", \"producer\": \"litportal-backend\", \"data\": {\"article_id\": \"art_789\", \"session_id\": \"ses_456\", \"user_id\": \"usr_123\", \"force_refresh\": false}}",
+      "attributes": {"ApproximateReceiveCount": "1", "SentTimestamp": "1786000000000", "SenderId": "AIDAIENQZJOLO23YVJ4VO", "ApproximateFirstReceiveTimestamp": "1786000000001"},
+      "messageAttributes": {},
+      "md5OfBody": "e4e68fb7bd0e697a0ae8f1bb342846b0",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:217794632783:scienthesis-oa-full-text-fetch",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

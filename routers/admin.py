@@ -851,7 +851,7 @@ async def planner_counts_for_session(session_id: str):
 
 
 @router.get("/search-benchmarks/cases")
-async def list_benchmark_cases():
+async def list_search_benchmark_cases():
     """Closed-set benchmark case list — used by the admin UI + tests.
     Never contains PHI."""
     return {
@@ -2037,7 +2037,6 @@ async def get_clinical_context_resolver_metrics(
     window_start = now - timedelta(days=7)
 
     sessions_coll = db[Collections.SEARCH_SESSIONS]
-    audit_coll = db[Collections.AUDIT_EVENTS]
 
     # Sessions in window. Use created_at as the time anchor.
     window_filter = {

@@ -29,8 +29,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from difflib import SequenceMatcher
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 from urllib.parse import quote, urlencode
 
 import httpx
@@ -269,6 +268,33 @@ class FullTextAccessBrokerService:
             .to_list(length=500)
         )
         article_ids = sorted({r["article_id"] for r in sa_rows if r.get("article_id")})
+        return await self.broker_for_articles(
+            article_ids,
+            session_id=session_id,
+            client=client,
+            replace_existing=replace_existing,
+        )
+
+    async def broker_for_articles(
+        self,
+        article_ids: list[str],
+        *,
+        session_id: str,
+        client: Optional[httpx.AsyncClient] = None,
+        replace_existing: bool = True,
+    ) -> dict[str, Any]:
+        """Run the cascade for an EXPLICIT set of articles.
+
+        The per-article entry point required by the SOW1 contract: the
+        full-text-import job must broker exactly the article being imported,
+        not every article in the caller-supplied session (up to 500), which is
+        the difference between ~26s and ~11,800s of work per message.
+
+        ``broker_for_session`` is now a thin wrapper that resolves a session's
+        article ids and delegates here, so both paths share one implementation.
+        """
+        db = get_db()
+        article_ids = sorted({a for a in (article_ids or []) if a})
         articles: list[dict[str, Any]] = []
         if article_ids:
             async for art in db[Collections.ARTICLES].find(

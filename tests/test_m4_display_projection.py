@@ -175,7 +175,7 @@ def test_helper_legacy_doc_returns_none():
 
 # --- M4 PICOTT term-mapping projection. -------------------------------
 
-from services.picott_term_mapping_service import build_m4_picott_term_mapping
+from services.picott_term_mapping_service import build_m4_picott_term_mapping  # noqa: E402
 
 
 def test_term_mapping_maps_m4_candidate():

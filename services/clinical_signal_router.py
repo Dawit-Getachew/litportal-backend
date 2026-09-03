@@ -25,7 +25,6 @@ Safety invariants (must remain true after every change):
 from __future__ import annotations
 
 import re
-from typing import Iterable
 
 from services.clinical_question_map import (
     ACTIVE_INTENTS,

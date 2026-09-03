@@ -33,7 +33,7 @@ configuration, R1C anchor labels — UNCHANGED.
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 from core.db import Collections, get_db
 from models.evidence_packets import (

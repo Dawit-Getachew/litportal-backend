@@ -1,5 +1,4 @@
 """Unit tests for thin-pool supplemental-retrieval decision helpers."""
-import os
 import sys
 from pathlib import Path
 

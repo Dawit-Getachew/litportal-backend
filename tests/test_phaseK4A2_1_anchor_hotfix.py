@@ -22,7 +22,6 @@ All tests deterministic — no LLM, no network, no PHI, no scraping.
 from __future__ import annotations
 
 import json
-import re
 
 import pytest
 

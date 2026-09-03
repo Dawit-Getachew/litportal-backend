@@ -48,19 +48,13 @@ import hashlib
 import logging
 import re
 import time
-import urllib.parse
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Optional
+from typing import Any, Optional
 
 import httpx
 
 from core.db import Collections, get_db
-from services.phi_guard import PHIGuardService
-from services.semantic_repair_active_config import load_active_config
-from services.semantic_repair_active_eligibility import (
-    is_semantic_repair_active_eligible,
-)
 
 logger = logging.getLogger("clinevidence.m3_1_benchmark")
 

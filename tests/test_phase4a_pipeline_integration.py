@@ -1,14 +1,11 @@
 """Phase 4A — pipeline integration + no-LLM-leak (Task 11 / F)."""
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
-from core.db import Collections, get_db
 from tests._phase3_helpers import (
     signup, make_packet_session, good_apixaban_articles, patch_llm_configured,
 )
@@ -140,7 +137,6 @@ async def test_oa_fetch_does_not_call_llm(client, monkeypatch):
         a["pmcid"] = f"PMC500{i}"
     sid, _, article_ids = await make_packet_session(client, h, articles=arts)
     # Patch LLMProvider.complete_json to raise on any call.
-    from services.llm_provider import llm_provider
     llm_mock = AsyncMock(side_effect=AssertionError("LLM must not be called from OA fetcher"))
     with patch_llm_configured() as prov:
         prov.complete_json = llm_mock  # type: ignore[assignment]

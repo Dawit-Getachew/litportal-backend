@@ -19,14 +19,13 @@ Closed-set syntax-error codes (matching the spec):
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from services.concept_block_query_builder import (
     ConceptBlockQuery,
-    DEFAULT_QUOTAS,
-    MAX_QUERY_LEN,
     _build_blocks,
     _dedupe_preserve,
     _mandatory_anchor_terms,
@@ -40,9 +39,6 @@ logger = logging.getLogger("clinevidence.query_compiler")
 # ---------------------------------------------------------------------------
 # Phase 5D — extended quotas for the 3 new query families.
 # ---------------------------------------------------------------------------
-import os
-
-
 def _quota(env_var: str, default: int) -> int:
     try:
         return int(os.environ.get(env_var, str(default)))
@@ -72,8 +68,7 @@ PHASE5D_QUOTAS = {
 # this module (which would create a cycle).
 # ---------------------------------------------------------------------------
 from services.query_stop_phrases import (  # noqa: E402
-    STOP_PHRASES,
-    _STOP_RE,
+    STOP_PHRASES as STOP_PHRASES,
     strip_stop_phrases,
     is_query_term_meaningful,
 )

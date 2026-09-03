@@ -29,7 +29,6 @@ patched / never invoked.
 from __future__ import annotations
 
 import inspect
-import json
 from datetime import datetime, timezone
 from unittest.mock import patch, AsyncMock
 
@@ -37,7 +36,6 @@ import pytest
 
 from core.db import get_db, Collections
 from services.m3_1_benchmark import (
-    serialize_a_arm_from_session,
     compute_metrics,
     leak_scan_passes,
     get_benchmark_run_by_id,

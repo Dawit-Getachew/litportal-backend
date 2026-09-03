@@ -428,8 +428,7 @@ class TestDefaultSelectionEdgeCases:
 # E. Override endpoint (via test client)
 # =============================================================================
 
-import asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient, ASGITransport  # noqa: E402
 
 
 async def _login_and_get_token(client, email, password):

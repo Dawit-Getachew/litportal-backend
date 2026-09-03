@@ -1,11 +1,9 @@
 """Phase 2C — FullTextAccessBrokerService unit tests."""
 from __future__ import annotations
 
-import os
 import sys
 import uuid
 from pathlib import Path
-from unittest.mock import AsyncMock
 
 import httpx
 import pytest

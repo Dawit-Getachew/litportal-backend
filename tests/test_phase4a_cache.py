@@ -13,7 +13,7 @@ from services.oa_fetcher import oa_fetcher
 from services.oa_fetcher.cache import (
     CACHE_DAYS, lookup_article_cache, write_cache_rows,
 )
-from tests.fixtures_oa_xml import BIOC_SAMPLE, JATS_SAMPLE, PMC_OA_SVC_OK
+from tests.fixtures_oa_xml import JATS_SAMPLE
 
 
 def _now():

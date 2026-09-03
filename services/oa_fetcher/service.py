@@ -30,7 +30,6 @@ from core.db import Collections, get_db
 from services.audit import audit_service
 
 from .cache import (
-    CACHE_DAYS,
     clone_cache_to_session,
     lookup_article_cache,
     write_cache_rows,
@@ -380,8 +379,26 @@ class OAFetcherService:
                     force_refresh=force_refresh, client=client,
                 )
 
-        fetched = await asyncio.gather(*(_one(a) for a in to_fetch)) if to_fetch else []
-        results: list[dict[str, Any]] = list(fetched)
+        fetched = (
+            await asyncio.gather(*(_one(a) for a in to_fetch), return_exceptions=True)
+            if to_fetch
+            else []
+        )
+        # fetch_for_article is documented never-raises; if that contract is ever
+        # broken, one bad article must not void the whole batch's writes.
+        results: list[dict[str, Any]] = []
+        for aid, r in zip(to_fetch, fetched):
+            if isinstance(r, BaseException):
+                logger.error("oa_fetch_unexpected_exception article=%s: %r", aid, r)
+                results.append({
+                    "article_id": aid, "status": "failed",
+                    "source": None, "license": None, "license_category": None,
+                    "can_ingest_for_summary": False, "sections_created": 0,
+                    "token_count": 0, "evidence_text_level": None,
+                    "error_code": "unexpected_exception",
+                })
+            else:
+                results.append(r)
         for aid in overflow:
             results.append({
                 "article_id": aid, "status": "skipped_cap_exceeded",
@@ -423,8 +440,8 @@ class OAFetcherService:
         db = get_db()
         now = _now()
         url = (
-            f"https://www.ebi.ac.uk/europepmc/article/PMC/" if source == "europe_pmc_oa"
-            else f"https://pmc.ncbi.nlm.nih.gov/articles/"
+            "https://www.ebi.ac.uk/europepmc/article/PMC/" if source == "europe_pmc_oa"
+            else "https://pmc.ncbi.nlm.nih.gov/articles/"
         )
         existing = await db[Collections.ARTICLE_ACCESS_LOCATIONS].find_one({
             "article_id": article_id, "search_session_id": session_id,

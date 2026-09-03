@@ -35,7 +35,6 @@ from services.diagnostics import (
     STAGE_NAMES,
     SessionDiagnostics,
     bind as diag_bind,
-    get_current as diag_current,
     reset as diag_reset,
 )
 

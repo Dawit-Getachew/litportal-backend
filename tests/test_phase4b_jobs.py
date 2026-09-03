@@ -11,8 +11,7 @@ import pytest
 from core.db import Collections, get_db
 from services.jobs import JobService, job_service
 from tests._phase3_helpers import (
-    good_apixaban_articles, good_apixaban_draft, good_verifier_failed,
-    good_verifier_passed, login, make_packet_session, patch_llm_configured, signup,
+    good_apixaban_articles, login, make_packet_session, patch_llm_configured, signup,
 )
 
 

@@ -75,7 +75,8 @@ def main():
             "journal-scoped query should return mostly Cochrane reviews"
 
     # Control: mechanism/background lane must NOT actively emit a Cochrane query.
-    pm = _therapy_picott(); pm["type_of_question"] = "background"
+    pm = _therapy_picott()
+    pm["type_of_question"] = "background"
     assert not cochrane_query_applicable(pm)
     bg_fam = [x for x in boolean_query_compiler.compile(pm, sources=["pubmed"])
               if x.query_family == "cochrane_review"]

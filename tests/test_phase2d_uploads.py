@@ -5,15 +5,12 @@ fixtures in ``tests/fixtures_pdf.py``.
 """
 from __future__ import annotations
 
-import asyncio
-import os
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import httpx
 import pytest
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent

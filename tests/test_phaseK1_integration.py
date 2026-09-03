@@ -469,13 +469,12 @@ def test_frameworks_remain_in_active_set_after_secondary_branch_emission() -> No
 # ``routers/search_sessions.py`` directly without any LLM dependency.
 # ---------------------------------------------------------------------
 
-import asyncio
-import json
-import re as _re_pii_guard
-import uuid as _k1_uuid
-from datetime import datetime, timedelta, timezone
+import json  # noqa: E402
+import re as _re_pii_guard  # noqa: E402
+import uuid as _k1_uuid  # noqa: E402
+from datetime import datetime, timedelta, timezone  # noqa: E402
 
-import pytest
+import pytest  # noqa: E402
 
 
 async def _k1_seed_session_with_cqm(

@@ -38,10 +38,7 @@ from typing import Any, Iterable, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from services.clinical_question_map import (
-    ACTIVE_FRAMEWORKS,
-    ACTIVE_INTENTS,
     DEFERRED_INTENTS,
-    GENERIC_MODIFIER_DENY_LIST,
     is_generic_modifier_token,
     ClinicalQuestionMap,
 )

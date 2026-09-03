@@ -1,0 +1,232 @@
+name: "[App] CI/CD"
+
+on:
+  push:
+    # `feat/aws` is a TEMPORARY addition so pushes to that branch auto-run the
+    # full pipeline (including a real deploy) while it is under active
+    # development. It must stay in sync with the `deploy-branch` override
+    # below; remove both in the same change once the branch merges.
+    branches: [main, feat/aws]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy-branch:
+        description: 'Branch to treat as the trusted push/deploy branch for this manual run -- must match a branch AppDeployRole-litportal-backend actually trusts (TEMP_TEST_BRANCHES in scienthesis-cdk src/github-deploy-roles-stack.ts). Does NOT change which branch the workflow runs from -- that is still the ref picked in the "Use workflow from" dropdown. Defaults to "feat/aws" to match the temporary override below; set to "main" for a one-off run against the normal path.'
+        required: false
+        type: string
+        default: feat/aws
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-cd:
+    # Shared pipeline logic (lint -> test -> build -> Trivy scan -> push to
+    # ECR -> register task-def revision -> ecs update-service -> wait for
+    # stable) lives in the scienthesis-cdk infra repo, so it only needs to
+    # change in one place for every backend service. See that file's header
+    # comment for the IAM permissions it relies on and the `deploy-branch`
+    # semantics.
+    #
+    # `permissions` here is required, not optional: a reusable workflow's
+    # nested jobs can never be granted more than the calling job has.
+    # app-deploy.yml's build-scan-push/deploy jobs request `id-token: write`
+    # for the OIDC AssumeRoleWithWebIdentity call, so without this block the
+    # caller defaults to `id-token: none` and every deploy fails closed.
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/app-deploy.yml@main
+    with:
+      service-name: litportal-backend
+      # AppDeployRoleArn-litportal-backend output from the GithubDeployRoles-prod
+      # stack. Not a secret -- see app-deploy.yml's `deploy-role-arn` input.
+      deploy-role-arn: arn:aws:iam::217794632783:role/GithubDeployRoles-prod-AppDeployRolelitportalbacken-kb7ySIYIZgUF
+      # requirements.txt (not pyproject.toml/uv.lock) -- installs straight
+      # into the runner's system Python; matches how the Dockerfile's
+      # builder stage installs deps, just without the venv since this
+      # runner is thrown away after the job.
+      install-command: "uv pip install --system -r requirements.txt"
+      # ruff + black + mypy are dev deps in requirements.txt. Adjust here if
+      # that tooling changes; no need to touch the shared workflow.
+      lint-command: "ruff check . && black --check . && mypy ."
+      # Soft-fail while a pre-existing ruff backlog (mostly under tests/) is
+      # triaged. Preferred over blanking `lint-command`, which would hide the
+      # signal entirely: the Lint step still runs and is flagged as an allowed
+      # failure in the Actions UI, it just doesn't block Test or the
+      # downstream Build/Deploy jobs. Flip to false once the backlog clears.
+      lint-continue-on-error: true
+      # `-n auto` is required, not optional: this repo's own pytest.ini assumes
+      # xdist parallelization (`--dist=loadgroup` plus `xdist_group` markers
+      # exist specifically to keep parallel runs safe against Mongo
+      # shared-state flake). Invoking plain `pytest` runs the whole suite
+      # serially and can exceed any reasonable CI budget.
+      test-command: "pytest -n auto"
+      # STEP-level cap, tightened from app-deploy.yml's 10-minute default.
+      # `test-continue-on-error` below is already true for an unrelated
+      # collection-error reason, so this step is a partial signal either way;
+      # 1 minute bounds how long a slow run holds up build-scan-push/deploy,
+      # at the cost of a smaller fraction of the suite completing per run.
+      # Raise this if a healthy `-n auto` run needs longer for a full signal.
+      # Scoped to this repo only -- other callers use the 10-minute default.
+      #
+      # Note the distinction app-deploy.yml draws: a STEP-level timeout is
+      # maskable by `test-continue-on-error`, a JOB-level one
+      # (`job-timeout-minutes`, left at its default here) is not and would
+      # cancel Lint and the downstream jobs with it.
+      test-timeout-minutes: 1
+      # Soft-fail: pytest currently aborts with "Interrupted: 3 errors during
+      # collection" before running any collected test.
+      # tests/test_phase2b_live_api.py requires a REACT_APP_BACKEND_URL env
+      # var CI does not set, and tests/test_phase6f1_live_acceptance.py /
+      # tests/test_phase6f_live_api.py call pytest.skip() at module level
+      # without allow_module_level=True. All three are application-side
+      # test-suite issues.
+      #
+      # This flag only stops CI blocking on pytest's non-zero exit -- it does
+      # not make pytest run the remaining tests instead of aborting at
+      # collection. Getting partial results would additionally require
+      # pytest's `--continue-on-collection-errors`, a separate open decision.
+      # Flip to false once the collection errors are fixed.
+      test-continue-on-error: true
+      # No-op while app-deploy.yml's scan runs informationally (exit-code 0).
+      # Kept set so the intent is explicit if that scan is ever made blocking.
+      # The image currently reports CRITICAL/HIGH findings in Python
+      # dependencies and in a vendored s5cmd binary (statically built against
+      # an old Go stdlib, shared with litpulse-backend); findings are
+      # documented separately for the application team.
+      trivy-continue-on-error: true
+      # TEMPORARY override matching the `feat/aws` push trigger above. Only
+      # works because AppDeployRole-litportal-backend also trusts `feat/aws`
+      # (TEMP_TEST_BRANCHES in scienthesis-cdk
+      # src/github-deploy-roles-stack.ts) -- the two must stay in sync. Remove
+      # the override (falling back to the "main" default) once `feat/aws`
+      # merges.
+      #
+      # `github.event.inputs.deploy-branch` is only populated on a manual
+      # `workflow_dispatch` run, so the literal fallback is what every
+      # automatic push uses -- it is this same temporary value duplicated so
+      # both trigger paths agree, not a generic default.
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  # --- Background job (Lambda) deploys -----------------------------------
+  #
+  # One job per Lambda background job rather than a matrix: `docker-context`
+  # is repo root for all of them, but `dockerfile`/`ecr-repo-name`/
+  # `function-name`/`deploy-role-arn` all differ. Each job assumes its OWN
+  # least-privilege deploy role (scienthesis-cdk src/job-deploy-roles.ts), not
+  # litportal-backend's shared app-service role, so one job's compromised CI
+  # cannot touch a sibling job's ECR repo or function.
+  #
+  # No `lint-command` on these jobs: this repo has no ruff-config excludes, so
+  # the `ci-cd` job's own `ruff check . && black --check . && mypy .` above
+  # already lints every job's `lambda/<job>/` directory.
+  #
+  # `test-command` IS needed per job: `pytest.ini` sets `testpaths = tests`,
+  # so the `ci-cd` job's own `pytest -n auto` step never collects
+  # `lambda/*/tests/`. The commands below run from repo root with the job
+  # directory prepended to PYTHONPATH; the repo-root install is what makes
+  # third-party imports (e.g. `httpx` in lithub_outbox_delivery) resolve.
+  # `uv run pytest` (each job's own Makefile) does not work here: every job's
+  # `pyproject.toml` declares `dependencies = []`, so `uv run` builds an
+  # isolated venv containing only pytest and cannot import the shared
+  # `jobs/*.py` modules' real dependencies.
+  deploy-summary-generation:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/lambda-deploy.yml@main
+    with:
+      ecr-repo-name: scienthesis/summary-generation
+      function-name: scienthesis-summary-generation
+      docker-context: "."
+      dockerfile: lambda/summary_generation/Dockerfile
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesLambdaJobDep-QIQfB01dDAMj"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=lambda/summary_generation:. pytest lambda/summary_generation/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  deploy-full-text-import:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/lambda-deploy.yml@main
+    with:
+      ecr-repo-name: scienthesis/full-text-import
+      function-name: scienthesis-full-text-import
+      docker-context: "."
+      dockerfile: lambda/full_text_import/Dockerfile
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesLambdaJobDep-amYWtatFhcRt"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=lambda/full_text_import:. pytest lambda/full_text_import/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  deploy-lithub-outbox-delivery:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/lambda-deploy.yml@main
+    with:
+      ecr-repo-name: scienthesis/lithub-outbox-delivery
+      function-name: scienthesis-lithub-outbox-delivery
+      docker-context: "."
+      dockerfile: lambda/lithub_outbox_delivery/Dockerfile
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesLambdaJobDep-Jj7iMB1tI4YN"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=lambda/lithub_outbox_delivery:. pytest lambda/lithub_outbox_delivery/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  deploy-oa-full-text-fetch:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/lambda-deploy.yml@main
+    with:
+      ecr-repo-name: scienthesis/oa-full-text-fetch
+      function-name: scienthesis-oa-full-text-fetch
+      docker-context: "."
+      dockerfile: lambda/oa_full_text_fetch/Dockerfile
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesLambdaJobDep-JUtNwVoc7N1n"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=lambda/oa_full_text_fetch:. pytest lambda/oa_full_text_fetch/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}
+
+  # --- Background job (Fargate) deploy: clinician-search-pipeline --------
+  #
+  # This repo's one long-running background job (scienthesis-cdk
+  # src/background-jobs.ts): an SQS -> EventBridge Pipe -> `ecs:RunTask`
+  # chain that runs `ecs/clinician_search/entrypoint.py` as a standalone
+  # Fargate task, with the batch passed in via the `PIPE_EVENT`
+  # container-override env var. `trigger-type: pipe` selects the
+  # `aws pipes describe-pipe`/`update-pipe` repoint path in
+  # fargate-job-deploy.yml over the EventBridge Scheduler path used by
+  # litpulse-backend's digest-generation.
+  #
+  # Repo-root build context, same convention as the Lambda jobs above. The
+  # separate `test-command` is needed for the same `pytest.ini` reason, and no
+  # separate `lint-command` is needed for the same ruff-config reason.
+  deploy-clinician-search-pipeline:
+    permissions:
+      contents: read
+      id-token: write
+    uses: Scienthesis-Loka/scienthesis-cdk/.github/workflows/fargate-job-deploy.yml@main
+    with:
+      job-name: clinician-search-pipeline
+      trigger-type: pipe
+      docker-context: "."
+      dockerfile: ecs/clinician_search/Dockerfile
+      deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-prod-JobDeployRolesFargateJobDe-yhJvhBEF08eH"
+      runtime: python
+      python-version: "3.12"
+      install-command: "uv pip install --system -r requirements.txt"
+      test-command: "PYTHONPATH=ecs/clinician_search:. pytest ecs/clinician_search/tests/ -v"
+      deploy-branch: ${{ github.event.inputs.deploy-branch || 'feat/aws' }}

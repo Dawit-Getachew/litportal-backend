@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from services.oa_fetcher import europe_pmc_oa
-from tests.fixtures_oa_xml import JATS_SAMPLE, JATS_NO_LICENSE
+from tests.fixtures_oa_xml import JATS_SAMPLE
 
 
 class _MockResp:

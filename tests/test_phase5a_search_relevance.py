@@ -17,7 +17,7 @@ import pytest
 from services.clinical_question_parser import clinical_question_parser
 from services.concept_block_query_builder import concept_block_query_builder
 from services.concept_expansion import (
-    expand_concept, expand_concepts, applicable_specialty_packs,
+    expand_concept, applicable_specialty_packs,
 )
 from services.picott_ranker import picott_aware_ranker
 from services.question_scope_classifier import question_scope_classifier
@@ -25,7 +25,7 @@ from services.retrieval_quality_evaluator import retrieval_quality_evaluator
 from services.search_benchmark import BENCHMARK_CASES, search_benchmark_service
 from services.spelling_normalizer import normalize as spelling_normalize
 from services.study_type_router import (
-    LEGACY_TO_NEW, NEW_TO_LEGACY, legacy_to_new, new_to_legacy, study_type_router,
+    LEGACY_TO_NEW, NEW_TO_LEGACY, legacy_to_new, study_type_router,
 )
 
 

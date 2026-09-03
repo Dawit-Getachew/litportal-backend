@@ -31,7 +31,6 @@ from models.picott_term_mapping import (
 )
 from services.primary_clinical_anchor import (
     CLARIFICATION_MESSAGE,
-    GENERIC_MODIFIERS,
 )
 
 logger = logging.getLogger("clinevidence.picott_term_mapping")
@@ -576,7 +575,6 @@ def build_picott_term_mapping(
     anchor_failure_reason = anchors_payload.get("anchor_failure_reason")
     role_repairs = session_doc.get("role_repairs_json") or []
     ontology_lifts = session_doc.get("ontology_lifts_json") or []
-    multi_intent = session_doc.get("multi_intent_json") or {}
 
     # Question-level fields
     type_of_question = _clean_str(picott.get("type_of_question"))

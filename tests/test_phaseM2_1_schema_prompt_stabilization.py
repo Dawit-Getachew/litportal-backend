@@ -24,7 +24,6 @@ from services.semantic_anchor_repair import (
     ALLOWED_FRAMEWORKS,
     ALLOWED_PRIMARY_INTENTS,
     SEMANTIC_REPAIR_REJECTION_REASONS,
-    SemanticRepairCandidate,
     canonicalize_candidate,
     detect_repair_triggers,
     run_semantic_anchor_repair_shadow,

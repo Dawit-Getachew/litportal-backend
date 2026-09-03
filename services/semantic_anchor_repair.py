@@ -49,13 +49,14 @@ trigger/rejection reasons, and counters reach
 from __future__ import annotations
 
 import logging
+import os as _os
 import re
 import time
 from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from services.diagnostics import SessionDiagnostics, get_current as diag_current
+from services.diagnostics import SessionDiagnostics
 from services.llm_provider import llm_provider
 
 logger = logging.getLogger("clinevidence.semantic_anchor_repair")
@@ -342,8 +343,6 @@ def canonicalize_candidate(raw: Optional[dict]) -> Optional[dict]:
 
 
 # Confidence floor — env-tunable per the M-phase brief, but default 0.7.
-import os as _os
-
 CONFIDENCE_THRESHOLD: float = float(
     (_os.environ.get("SEMANTIC_REPAIR_CONFIDENCE_THRESHOLD") or "0.7").strip()
     or "0.7"
@@ -1026,7 +1025,6 @@ async def run_semantic_anchor_repair_shadow(
     """
     if not trigger_reasons:
         return None, [], 0
-    diag = diagnostics or diag_current()
     user_payload = _build_user_payload(
         normalized_question=normalized_question or "",
         trigger_reasons=trigger_reasons,

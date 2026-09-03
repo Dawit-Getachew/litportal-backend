@@ -237,7 +237,13 @@ class FullTextImportService:
             http_client = httpx.AsyncClient(timeout=20.0)
         try:
             try:
-                await full_text_access_broker.broker_for_session(sid, client=http_client)
+                # Broker EXACTLY the imported article. brokering the whole
+                # session re-ran the cascade over every article the caller's
+                # session happened to contain (up to the 500 cap) — orders of
+                # magnitude more work than the one article being imported.
+                await full_text_access_broker.broker_for_articles(
+                    [article_id], session_id=sid, client=http_client,
+                )
             except Exception:  # noqa: BLE001 — discovery is best-effort
                 logger.exception("full-text import: access broker failed (non-fatal)")
 
@@ -425,11 +431,14 @@ class FullTextImportService:
         sids = dict(art.get("source_ids_json") or {})
         changed_sids = False
         if candidate.get("pmid") and not sids.get("pubmed"):
-            sids["pubmed"] = candidate["pmid"]; changed_sids = True
+            sids["pubmed"] = candidate["pmid"]
+            changed_sids = True
         if candidate.get("doi") and not sids.get("doi"):
-            sids["doi"] = normalize_doi(candidate["doi"]) or candidate["doi"]; changed_sids = True
+            sids["doi"] = normalize_doi(candidate["doi"]) or candidate["doi"]
+            changed_sids = True
         if candidate.get("pmcid") and not sids.get("pmc"):
-            sids["pmc"] = candidate["pmcid"]; changed_sids = True
+            sids["pmc"] = candidate["pmcid"]
+            changed_sids = True
         if changed_sids:
             update["source_ids_json"] = sids
         if update:

@@ -26,14 +26,12 @@ No network. No LLM. Pure deterministic ontology testing.
 """
 from __future__ import annotations
 
-import pytest
 
 from services.procedure_ontology_mapper import procedure_ontology_mapper
 from services.procedure_packs import (
     MANAGEMENT_DOMAINS,
     PROCEDURE_FAMILIES,
     all_entries,
-    all_packs,
     get_pack,
 )
 

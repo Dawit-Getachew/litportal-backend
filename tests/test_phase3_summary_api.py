@@ -1,7 +1,6 @@
 """Phase 3 — generate-summary API endpoint tests (Task 11 / F)."""
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
@@ -105,7 +104,8 @@ async def test_zero_selected_articles_rejected_400(client):
     t, _ = await signup(client, "zsel@test.com")
     h = {"Authorization": f"Bearer {t}"}
     arts = good_apixaban_articles()
-    for a in arts: a["user_included"] = False
+    for a in arts:
+        a["user_included"] = False
     sid, _, _ = await make_packet_session(client, h, articles=arts)
     with patch_llm_configured():
         r = await client.post(f"/api/search-sessions/{sid}/generate-summary?sync=true", headers=h, json={

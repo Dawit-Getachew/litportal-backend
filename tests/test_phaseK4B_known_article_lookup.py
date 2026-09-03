@@ -9,20 +9,18 @@ from __future__ import annotations
 import json
 import sys
 import uuid
-import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
-import httpx
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from services import known_article_lookup as kal
-from core.db import Collections
+from services import known_article_lookup as kal  # noqa: E402
+from core.db import Collections  # noqa: E402
 
 
 # ---------------------------------------------------------------------
@@ -368,7 +366,6 @@ async def test_t10_include_in_evidence(client):
 # ---------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_t11_can_be_saved_to_library(client):
-    from core.db import get_db
     token, uid = await _login(client, "clinician")
     # First confirm-access — which upserts the article.
     candidate = {
