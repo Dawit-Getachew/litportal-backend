@@ -1,17 +1,19 @@
 name: "[App] CI/CD"
 
 on:
+  # A push to `main` is the only automatic trigger that builds, pushes an
+  # image and deploys. A pull request runs lint and test only -- see the
+  # `build-on-non-deploy-branch: false` inputs on every job below.
   push:
-    # `feat/aws` is a TEMPORARY addition so pushes to that branch auto-run the
-    # full pipeline (including a real deploy) while it is under active
-    # development. It must stay in sync with the `deploy-branch` override
-    # below; remove both in the same change once the branch merges.
     branches: [main]
+  # Scoped to PRs that actually target `main`. Without this filter a PR
+  # between two feature branches also runs the whole pipeline.
   pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       deploy-branch:
-        description: 'Branch to treat as the trusted push/deploy branch for this manual run -- must match a branch AppDeployRole-litportal-backend actually trusts (TEMP_TEST_BRANCHES in scienthesis-cdk src/github-deploy-roles-stack.ts). Does NOT change which branch the workflow runs from -- that is still the ref picked in the "Use workflow from" dropdown. Defaults to "feat/aws" to match the temporary override below; set to "main" for a one-off run against the normal path.'
+        description: 'Branch to treat as the trusted push/deploy branch for this manual run -- must match a branch AppDeployRole-litportal-backend actually trusts (SERVICE_PRIMARY_BRANCH, plus TEMP_TEST_BRANCHES, in scienthesis-cdk src/github-deploy-roles-stack.ts). Does NOT change which branch the workflow runs from -- that is still the ref picked in the "Use workflow from" dropdown. Leave at "main" for the normal path.'
         required: false
         type: string
         default: main
@@ -97,18 +99,16 @@ jobs:
       # an old Go stdlib, shared with litpulse-backend); findings are
       # documented separately for the application team.
       trivy-continue-on-error: true
-      # TEMPORARY override matching the `feat/aws` push trigger above. Only
-      # works because AppDeployRole-litportal-backend also trusts `feat/aws`
-      # (TEMP_TEST_BRANCHES in scienthesis-cdk
-      # src/github-deploy-roles-stack.ts) -- the two must stay in sync. Remove
-      # the override (falling back to the "main" default) once `feat/aws`
-      # merges.
-      #
       # `github.event.inputs.deploy-branch` is only populated on a manual
       # `workflow_dispatch` run, so the literal fallback is what every
-      # automatic push uses -- it is this same temporary value duplicated so
-      # both trigger paths agree, not a generic default.
+      # automatic push uses. It must name a branch
+      # AppDeployRole-litportal-backend actually trusts (scienthesis-cdk
+      # src/github-deploy-roles-stack.ts) -- the two must stay in sync.
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'main' }}
+      # Pull requests run lint and test only; the docker build, the Trivy
+      # scan and the deploy all wait for a push to `main`. See the input's
+      # doc comment in app-deploy.yml for the pre-merge signal this gives up.
+      build-on-non-deploy-branch: false
 
   # --- Background job (Lambda) deploys -----------------------------------
   #
@@ -148,6 +148,10 @@ jobs:
       install-command: "uv pip install --system -r requirements.txt"
       test-command: "PYTHONPATH=lambda/summary_generation:. pytest lambda/summary_generation/tests/ -v"
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'main' }}
+      # Pull requests run lint and test only; the docker build, the Trivy
+      # scan and the deploy all wait for a push to `main`. See the input's
+      # doc comment in app-deploy.yml for the pre-merge signal this gives up.
+      build-on-non-deploy-branch: false
 
   deploy-full-text-import:
     permissions:
@@ -165,6 +169,10 @@ jobs:
       install-command: "uv pip install --system -r requirements.txt"
       test-command: "PYTHONPATH=lambda/full_text_import:. pytest lambda/full_text_import/tests/ -v"
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'main' }}
+      # Pull requests run lint and test only; the docker build, the Trivy
+      # scan and the deploy all wait for a push to `main`. See the input's
+      # doc comment in app-deploy.yml for the pre-merge signal this gives up.
+      build-on-non-deploy-branch: false
 
   deploy-lithub-outbox-delivery:
     permissions:
@@ -182,6 +190,10 @@ jobs:
       install-command: "uv pip install --system -r requirements.txt"
       test-command: "PYTHONPATH=lambda/lithub_outbox_delivery:. pytest lambda/lithub_outbox_delivery/tests/ -v"
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'main' }}
+      # Pull requests run lint and test only; the docker build, the Trivy
+      # scan and the deploy all wait for a push to `main`. See the input's
+      # doc comment in app-deploy.yml for the pre-merge signal this gives up.
+      build-on-non-deploy-branch: false
 
   deploy-oa-full-text-fetch:
     permissions:
@@ -199,6 +211,10 @@ jobs:
       install-command: "uv pip install --system -r requirements.txt"
       test-command: "PYTHONPATH=lambda/oa_full_text_fetch:. pytest lambda/oa_full_text_fetch/tests/ -v"
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'main' }}
+      # Pull requests run lint and test only; the docker build, the Trivy
+      # scan and the deploy all wait for a push to `main`. See the input's
+      # doc comment in app-deploy.yml for the pre-merge signal this gives up.
+      build-on-non-deploy-branch: false
 
   # --- Background job (Fargate) deploy: clinician-search-pipeline --------
   #
@@ -230,3 +246,7 @@ jobs:
       install-command: "uv pip install --system -r requirements.txt"
       test-command: "PYTHONPATH=ecs/clinician_search:. pytest ecs/clinician_search/tests/ -v"
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'main' }}
+      # Pull requests run lint and test only; the docker build, the Trivy
+      # scan and the deploy all wait for a push to `main`. See the input's
+      # doc comment in app-deploy.yml for the pre-merge signal this gives up.
+      build-on-non-deploy-branch: false
