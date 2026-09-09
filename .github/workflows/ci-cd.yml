@@ -1,13 +1,20 @@
 name: "[App] CI/CD"
 
 on:
-  # A push to `main` is the only automatic trigger that builds, pushes an
-  # image and deploys. A pull request runs lint and test only -- see the
-  # `build-on-non-deploy-branch: false` inputs on every job below.
+  # A push to any branch runs the `ci-cd` job's full build+scan; a push to
+  # `main` additionally deploys to PROD, and a push to any OTHER branch
+  # deploys to DEV instead (see that job's `dev-deploy-role-arn` input and
+  # scienthesis-cdk app-deploy.yml's "Resolve deploy target" step) -- this is
+  # what makes "push a branch / open a PR from it" auto-deploy to DEV. The
+  # Lambda/Fargate job-deploy jobs below are unaffected (still `false`,
+  # PROD-only) -- DEV has no wired job-deploy path yet, out of scope here.
   push:
-    branches: [main]
   # Scoped to PRs that actually target `main`. Without this filter a PR
-  # between two feature branches also runs the whole pipeline.
+  # between two feature branches also runs the whole pipeline. A
+  # `pull_request`-triggered run never deploys (PROD or DEV) regardless of
+  # branch -- see app-deploy.yml's "Resolve deploy target" step -- so this
+  # gives lint/test/build/Trivy-scan signal on the PR without attempting a
+  # doomed OIDC AssumeRole.
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -105,10 +112,12 @@ jobs:
       # AppDeployRole-litportal-backend actually trusts (scienthesis-cdk
       # src/github-deploy-roles-stack.ts) -- the two must stay in sync.
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'main' }}
-      # Pull requests run lint and test only; the docker build, the Trivy
-      # scan and the deploy all wait for a push to `main`. See the input's
-      # doc comment in app-deploy.yml for the pre-merge signal this gives up.
-      build-on-non-deploy-branch: false
+      # AppDeployRoleArn-litportal-backend output from the GithubDeployRoles-dev
+      # stack. A push to any branch other than `main` deploys here instead of
+      # PROD (see deploy-branch above and app-deploy.yml's "Resolve deploy
+      # target" step); a `pull_request` run never deploys either way.
+      dev-deploy-role-arn: arn:aws:iam::217794632783:role/GithubDeployRoles-dev-AppDeployRolelitportalbackend-dJ9oyjWbjpge
+      dev-ecs-cluster: scienthesis-dev
 
   # --- Background job (Lambda) deploys -----------------------------------
   #
