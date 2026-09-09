@@ -1,20 +1,21 @@
 name: "[App] CI/CD"
 
 on:
-  # A push to any branch runs the `ci-cd` job's full build+scan; a push to
-  # `main` additionally deploys to PROD, and a push to any OTHER branch
-  # deploys to DEV instead (see that job's `dev-deploy-role-arn` input and
-  # scienthesis-cdk app-deploy.yml's "Resolve deploy target" step) -- this is
-  # what makes "push a branch / open a PR from it" auto-deploy to DEV. The
-  # Lambda/Fargate job-deploy jobs below are unaffected (still `false`,
-  # PROD-only) -- DEV has no wired job-deploy path yet, out of scope here.
+  # A plain push to `main` runs the `ci-cd` job's full build+scan+deploy to
+  # PROD. A plain push to any OTHER branch is lint-and-test only by default
+  # (no docker build, no deploy) -- see app-deploy.yml's
+  # `build-on-non-deploy-branch` (left at its default false here) and its
+  # "Resolve deploy target" step. The Lambda/Fargate job-deploy jobs below
+  # are unaffected either way (still PROD-only) -- DEV has no wired
+  # job-deploy path yet, out of scope here.
   push:
   # Scoped to PRs that actually target `main`. Without this filter a PR
-  # between two feature branches also runs the whole pipeline. A
-  # `pull_request`-triggered run never deploys (PROD or DEV) regardless of
-  # branch -- see app-deploy.yml's "Resolve deploy target" step -- so this
-  # gives lint/test/build/Trivy-scan signal on the PR without attempting a
-  # doomed OIDC AssumeRole.
+  # between two feature branches also runs the whole pipeline. Opening (or
+  # pushing to) a pull_request is what runs the `ci-cd` job's full
+  # build+scan+deploy-to-DEV cycle (see that job's `dev-deploy-role-arn`
+  # input) -- a PR's OIDC subject carries no branch name, so DEV's
+  # AppDeployRole separately trusts `trustPullRequests` for this
+  # (scienthesis-cdk src/github-oidc.ts). Same-repo PRs only, not forks.
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -113,9 +114,9 @@ jobs:
       # src/github-deploy-roles-stack.ts) -- the two must stay in sync.
       deploy-branch: ${{ github.event.inputs.deploy-branch || 'main' }}
       # AppDeployRoleArn-litportal-backend output from the GithubDeployRoles-dev
-      # stack. A push to any branch other than `main` deploys here instead of
-      # PROD (see deploy-branch above and app-deploy.yml's "Resolve deploy
-      # target" step); a `pull_request` run never deploys either way.
+      # stack. A `pull_request` run (targeting `main`, per the filter above)
+      # deploys here; a plain push to any branch other than `main` is
+      # lint-and-test only and deploys nowhere.
       dev-deploy-role-arn: arn:aws:iam::217794632783:role/GithubDeployRoles-dev-AppDeployRolelitportalbackend-dJ9oyjWbjpge
       dev-ecs-cluster: scienthesis-dev
 
