@@ -5,17 +5,22 @@ on:
   # PROD. A plain push to any OTHER branch is lint-and-test only by default
   # (no docker build, no deploy) -- see app-deploy.yml's
   # `build-on-non-deploy-branch` (left at its default false here) and its
-  # "Resolve deploy target" step. The Lambda/Fargate job-deploy jobs below
-  # are unaffected either way (still PROD-only) -- DEV has no wired
-  # job-deploy path yet, out of scope here.
+  # "Resolve deploy target" step.
+  #
+  # DEV deploy (2026-09-21): every job below -- the main `ci-cd` job AND all
+  # 5 Lambda/Fargate background-job callers -- now carries its own
+  # `dev-deploy-role-arn` (plus `dev-ecs-cluster` for the one Fargate job)
+  # and `dispatch-target-env`, so a `pull_request` run or a `workflow_dispatch`
+  # run with target-env: dev deploys ALL of them to DEV, not just the main
+  # app service. Previously only the `ci-cd` job had a DEV path.
   push:
   # Scoped to PRs that actually target `main`. Without this filter a PR
   # between two feature branches also runs the whole pipeline. Opening (or
-  # pushing to) a pull_request is what runs the `ci-cd` job's full
-  # build+scan+deploy-to-DEV cycle (see that job's `dev-deploy-role-arn`
-  # input) -- a PR's OIDC subject carries no branch name, so DEV's
-  # AppDeployRole separately trusts `trustPullRequests` for this
-  # (scienthesis-cdk src/github-oidc.ts). Same-repo PRs only, not forks.
+  # pushing to) a pull_request is what runs every job's full
+  # build+scan+deploy-to-DEV cycle (see each job's `dev-deploy-role-arn`
+  # input) -- a PR's OIDC subject carries no branch name, so each DEV deploy
+  # role separately trusts `trustPullRequests` for this (scienthesis-cdk
+  # src/github-oidc.ts). Same-repo PRs only, not forks.
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,7 +31,7 @@ on:
         type: string
         default: main
       target-env:
-        description: 'Which environment this manual run deploys to. "prod" (default) keeps the original behavior -- deploys PROD, but only when dispatched from the branch named in deploy-branch above. "dev" deploys to DEV instead, from whichever branch/ref you dispatch this on -- DEV''s AppDeployRole trusts any branch (scienthesis-cdk src/github-deploy-roles-stack.ts createAppDeployRole), so no IAM change was needed to add this.'
+        description: 'Which environment this manual run deploys to. "prod" (default) keeps the original behavior -- deploys PROD, but only when dispatched from the branch named in deploy-branch above. "dev" deploys to DEV instead, from whichever branch/ref you dispatch this on, for EVERY job in this file -- DEV''s deploy roles trust any branch (scienthesis-cdk src/github-deploy-roles-stack.ts createAppDeployRole, src/job-deploy-roles.ts JobDeployRoles), so no IAM change was needed to add this.'
         required: false
         type: choice
         options:
@@ -176,6 +181,15 @@ jobs:
       # scan and the deploy all wait for a push to `main`. See the input's
       # doc comment in app-deploy.yml for the pre-merge signal this gives up.
       build-on-non-deploy-branch: false
+      # LambdaJobDeployRoleArn-summary-generation output from the
+      # GithubDeployRoles-dev stack (ScienthesisPlatform-dev, JobDeployRoles
+      # construct). A `pull_request` run deploys here; not a secret, same
+      # reasoning as deploy-role-arn above.
+      dev-deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-dev-JobDeployRolesLambdaJobDepl-4e8Ak2P06b59"
+      # Same target-env passthrough as the ci-cd job above -- lets a manual
+      # dispatch with target-env: dev deploy this job to DEV too, from
+      # whichever branch/ref the run was dispatched on.
+      dispatch-target-env: ${{ github.event.inputs.target-env || 'prod' }}
 
   deploy-full-text-import:
     permissions:
@@ -197,6 +211,11 @@ jobs:
       # scan and the deploy all wait for a push to `main`. See the input's
       # doc comment in app-deploy.yml for the pre-merge signal this gives up.
       build-on-non-deploy-branch: false
+      # LambdaJobDeployRoleArn-full-text-import output from the
+      # GithubDeployRoles-dev stack. A `pull_request` run deploys here; not a
+      # secret, same reasoning as deploy-role-arn above.
+      dev-deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-dev-JobDeployRolesLambdaJobDepl-kRQIoOTZ9GGX"
+      dispatch-target-env: ${{ github.event.inputs.target-env || 'prod' }}
 
   deploy-lithub-outbox-delivery:
     permissions:
@@ -218,6 +237,11 @@ jobs:
       # scan and the deploy all wait for a push to `main`. See the input's
       # doc comment in app-deploy.yml for the pre-merge signal this gives up.
       build-on-non-deploy-branch: false
+      # LambdaJobDeployRoleArn-lithub-outbox-delivery output from the
+      # GithubDeployRoles-dev stack. A `pull_request` run deploys here; not a
+      # secret, same reasoning as deploy-role-arn above.
+      dev-deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-dev-JobDeployRolesLambdaJobDepl-ubTW3A9lLSuZ"
+      dispatch-target-env: ${{ github.event.inputs.target-env || 'prod' }}
 
   deploy-oa-full-text-fetch:
     permissions:
@@ -239,6 +263,11 @@ jobs:
       # scan and the deploy all wait for a push to `main`. See the input's
       # doc comment in app-deploy.yml for the pre-merge signal this gives up.
       build-on-non-deploy-branch: false
+      # LambdaJobDeployRoleArn-oa-full-text-fetch output from the
+      # GithubDeployRoles-dev stack. A `pull_request` run deploys here; not a
+      # secret, same reasoning as deploy-role-arn above.
+      dev-deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-dev-JobDeployRolesLambdaJobDepl-Ce3sDffpjiln"
+      dispatch-target-env: ${{ github.event.inputs.target-env || 'prod' }}
 
   # --- Background job (Fargate) deploy: clinician-search-pipeline --------
   #
@@ -274,3 +303,9 @@ jobs:
       # scan and the deploy all wait for a push to `main`. See the input's
       # doc comment in app-deploy.yml for the pre-merge signal this gives up.
       build-on-non-deploy-branch: false
+      # FargateJobDeployRoleArn-clinician-search-pipeline output from the
+      # GithubDeployRoles-dev stack. A `pull_request` run deploys here; not a
+      # secret, same reasoning as deploy-role-arn above.
+      dev-deploy-role-arn: "arn:aws:iam::217794632783:role/ScienthesisPlatform-dev-JobDeployRolesFargateJobDep-DOJUBzAOOsg1"
+      dev-ecs-cluster: scienthesis-dev
+      dispatch-target-env: ${{ github.event.inputs.target-env || 'prod' }}
