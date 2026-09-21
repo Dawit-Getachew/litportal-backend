@@ -132,6 +132,14 @@ jobs:
       # lint-and-test only and deploys nowhere.
       dev-deploy-role-arn: arn:aws:iam::217794632783:role/GithubDeployRoles-dev-AppDeployRolelitportalbackend-dJ9oyjWbjpge
       dev-ecs-cluster: scienthesis-dev
+      # app-deploy.yml's own default for this input is 0 (DEV always
+      # bootstraps at 0 until explicitly raised, src/stack.ts
+      # RUNNING_SERVICES) -- litportal-backend is already in that list, so
+      # DEV should actually run. Without this override, every DEV deploy
+      # silently calls `ecs update-service --desired-count 0`, undoing any
+      # manual scale-up (this is what happened 2026-09-21: dev was manually
+      # bumped to 1 on 2026-09-09, then reset to 0 by the next DEV deploy).
+      dev-desired-count: 1
       # Passes this run's manual target-env choice through to the reusable
       # workflow's own dispatch-target-env input (app-deploy.yml), which is
       # what actually makes a `workflow_dispatch` run resolve to DEV in the
