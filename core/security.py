@@ -1,14 +1,18 @@
-"""JWT + bcrypt password helpers, FastAPI deps, and login rate-limiter."""
+"""JWT + password-hashing helpers, FastAPI deps, and login rate-limiter."""
 from __future__ import annotations
 
+import asyncio
+import os
+import re
+import threading
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import logging
 
-import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -27,15 +31,76 @@ _USER_PROJECTION = {"hashed_password": 0, "_id": 0}
 
 
 # ---------- password hashing ----------
+# New hashes are Argon2id (OWASP low-memory profile: 19 MiB, t=2, p=1 — far
+# cheaper per login than bcrypt cost 12 on a small task); existing bcrypt hashes
+# still verify. Imports are lazy: the summary-generation worker imports this
+# module but never hashes. Request handlers must use the *_async variants so
+# CPU-bound hashing never blocks the event loop.
+# Full-format check first: bcrypt 4.1.x panics (BaseException) on malformed hashes.
+_BCRYPT_HASH_RE = re.compile(r"^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$")
+_BCRYPT_MAX_PASSWORD_BYTES = 72  # bcrypt only reads the first 72 bytes
+_argon2_hasher = None
+_hash_executor: ThreadPoolExecutor | None = None
+_hash_lock = threading.Lock()
+
+
+def _argon2():
+    global _argon2_hasher
+    if _argon2_hasher is None:
+        from argon2 import PasswordHasher
+
+        _argon2_hasher = PasswordHasher(
+            time_cost=int(os.environ.get("PASSWORD_ARGON2_TIME_COST", "2")),
+            memory_cost=int(os.environ.get("PASSWORD_ARGON2_MEMORY_KIB", "19456")),
+            parallelism=int(os.environ.get("PASSWORD_ARGON2_PARALLELISM", "1")),
+        )
+    return _argon2_hasher
+
+
+def _hash_pool() -> ThreadPoolExecutor:
+    global _hash_executor
+    if _hash_executor is None:
+        with _hash_lock:
+            if _hash_executor is None:
+                _hash_executor = ThreadPoolExecutor(
+                    max_workers=max(1, int(os.environ.get("PASSWORD_HASH_MAX_CONCURRENCY", "2"))),
+                    thread_name_prefix="password-hash",
+                )
+    return _hash_executor
+
+
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return _argon2().hash(password)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """Argon2id or legacy bcrypt. Never raises (shadow users store an empty hash)."""
+    if not isinstance(plain, str) or not isinstance(hashed, str):
+        return False
     try:
-        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+        if hashed.startswith("$argon2"):
+            from argon2.exceptions import InvalidHashError, VerificationError
+
+            try:
+                return _argon2().verify(hashed, plain)
+            except (VerificationError, InvalidHashError):
+                return False
+        if _BCRYPT_HASH_RE.match(hashed):
+            import bcrypt
+
+            secret = plain.encode("utf-8")[:_BCRYPT_MAX_PASSWORD_BYTES]
+            return bcrypt.checkpw(secret, hashed.encode("utf-8"))
     except (ValueError, TypeError):
         return False
+    return False
+
+
+async def hash_password_async(password: str) -> str:
+    return await asyncio.get_running_loop().run_in_executor(_hash_pool(), hash_password, password)
+
+
+async def verify_password_async(plain: str, hashed: str) -> bool:
+    return await asyncio.get_running_loop().run_in_executor(_hash_pool(), verify_password, plain, hashed)
 
 
 # ---------- token mgmt ----------
