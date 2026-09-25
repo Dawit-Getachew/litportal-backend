@@ -13,6 +13,7 @@ from clinical_engine.contracts.question import (
     framework_for,
 )
 from clinical_engine.interpretation.model_reading import QUESTION_TYPES, ROLES
+from clinical_engine.interpretation.rules import _SETTINGS  # shared setting lexicon
 
 
 class EngineInputError(ValueError):
@@ -130,14 +131,28 @@ _PEOPLE_NOUN = re.compile(
 )
 _AGE_WORD = re.compile(r"(?i)\b(adults?|child|children|infants?|neonat\w*|newborns?|elderly|older|"
                        r"p(?:a)?ediatric|adolescents?|teen\w*|geriatric)\b")
+_SCREEN_FOR = re.compile(r"(?i)^screening\s+for\s+(?P<target>.+)$")
+_SCREEN_WORD = re.compile(r"(?i)^screening\s+(?:with|by|using|via)\s+|\s+screening$")
 
 
-def population_phrase(cqm: ClinicalQuestionMap, *, with_conditions: bool = True) -> str:
+_SETTING_PHRASES = {
+    "intensive care unit": "in the intensive care unit", "emergency department": "in the emergency department",
+    "primary care": "in primary care", "outpatient": "in outpatient care", "inpatient": "in hospital",
+    "prehospital": "in the prehospital setting", "perioperative": "in the perioperative period",
+    "nursing home": "in nursing homes",
+}
+_SETTING_PATTERNS = dict(_SETTINGS)
+
+
+def population_phrase(
+    cqm: ClinicalQuestionMap, *, with_conditions: bool = True, exclude: frozenset[str] = frozenset(),
+) -> str:
     ages = cqm.active("age_group")
     age_noun = _AGE_NOUNS.get(ages[0].value) if ages else None
     outcomes = {e.value.lower() for e in cqm.active("outcome")}
     conditions = [e.value for e in cqm.active("condition")
-                  if not (cqm.question_type in _CONDITION_IS_OUTCOME_OK and e.value.lower() in outcomes)]
+                  if not (cqm.question_type in _CONDITION_IS_OUTCOME_OK and e.value.lower() in outcomes)
+                  and e.value.lower() not in exclude]
     descs = [e.value for e in cqm.active("population")]
     if descs:
         head = _join(descs)
@@ -155,9 +170,13 @@ def population_phrase(cqm: ClinicalQuestionMap, *, with_conditions: bool = True)
     excluded = [_display(e).lower() for e in cqm.elements if e.negated]
     if excluded:
         phrase += f" (excluding {_join(excluded)})"
-    settings = [e.value for e in cqm.active("setting")]
-    if settings:
-        phrase += f" in the {_join(settings)}" if len(settings) == 1 else f" ({_join(settings)})"
+    # Skip a setting the patient description already says ("ICU patients", "hospitalized adults").
+    settings = [e.value for e in cqm.active("setting")
+                if not (e.value in _SETTING_PATTERNS and re.search(_SETTING_PATTERNS[e.value], phrase, re.I))]
+    if len(settings) == 1:
+        phrase += " " + _SETTING_PHRASES.get(settings[0].lower(), f"in the {settings[0]}")
+    elif settings:
+        phrase += f" ({_join(settings)})"
     return phrase
 
 
@@ -190,7 +209,19 @@ def build_summary(cqm: ClinicalQuestionMap) -> str:
         if refs:
             s += f" (reference standard: {refs})"
     elif t == "screening":
-        s = f"Whether screening {pop}" + (f" with {tests}" if tests else "") + f" improves {outs or 'outcomes'}"
+        # "screening for diabetic retinopathy" names what is screened for, not the test.
+        targets, tools = [], []
+        for e in cqm.active("index_test"):
+            m = _SCREEN_FOR.match(e.value)
+            if m:
+                targets.append(m.group("target"))
+            elif (tool := _SCREEN_WORD.sub("", e.value).strip()) and tool.lower() != "screening":
+                tools.append(tool)
+        screened = frozenset(v.lower() for v in targets)
+        gains = _join([e.value for e in cqm.active("outcome") if e.value.lower() not in screened])
+        s = f"Whether screening {population_phrase(cqm, exclude=screened)}"
+        s += (f" for {_join(targets)}" if targets else "") + (f" with {_join(tools)}" if tools else "")
+        s += f" improves {gains or 'outcomes'}"
     elif t == "prognosis":
         s = "Prognosis" + (f" ({outs})" if outs else "") + f" of {pop}" + (f" by {factors}" if factors else "")
     elif t == "epidemiology":

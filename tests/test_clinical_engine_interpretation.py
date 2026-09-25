@@ -325,3 +325,169 @@ def test_edit_validation():
 ])
 def test_summary_sentences(qtype, elements, expected):
     assert build_summary(_cqm(qtype, *elements)) == expected
+
+
+# ── readings from the live question trial (model outputs recorded 2026-09-25) ──
+
+
+def test_age_codes_and_ages_are_not_populations():
+    q = "Apixaban versus warfarin for stroke prevention in atrial fibrillation patients over 80"
+    out = validate_model_output(q, {"question_type": "treatment", "elements": [
+        {"role": "population", "value": "older_adult", "stated": True, "quote": "patients over 80"},
+        {"role": "population", "value": "patients over 80", "stated": True, "quote": "patients over 80"},
+        {"role": "population", "value": "aged 65 and older", "stated": False},
+        {"role": "population", "value": "patients with atrial fibrillation", "stated": False},
+    ]})
+    assert [e.value for e in out.elements] == ["patients with atrial fibrillation"]
+
+
+def test_generic_treatment_wording_is_not_a_treatment():
+    q = "Treatment options for stage 4 prostate cancer"
+    out = validate_model_output(q, {"question_type": "clinical_management", "elements": [
+        {"role": "intervention", "value": "treatment options", "stated": True, "quote": "Treatment options"},
+        {"role": "intervention", "value": "best therapy", "stated": False},
+        {"role": "comparator", "value": "standard therapy", "stated": False},
+        {"role": "condition", "value": "stage 4 prostate cancer", "stated": True, "quote": "stage 4 prostate cancer"},
+    ]})
+    assert [(e.role, e.value) for e in out.elements] == [
+        ("comparator", "standard therapy"), ("condition", "stage 4 prostate cancer")]
+
+
+@pytest.mark.parametrize("value,question,span", [
+    ("early antibiotics", "Early versus delayed antibiotics for sepsis", "Early versus delayed antibiotics"),
+    ("oral antibiotics", "Oral vs. intravenous antibiotics in children", "Oral vs. intravenous antibiotics"),
+    ("high-dose aspirin", "high or low dose aspirin after stroke", "high or low dose aspirin"),
+    ("early antibiotics", "Early antibiotics compared with delayed antibiotics", "Early antibiotics"),
+])
+def test_elided_comparison_arm_counts_as_stated(value, question, span):
+    from clinical_engine.interpretation.model_reading import elliptical_span
+    got = elliptical_span(value, question) if not quote_in_question(value, question) else value
+    assert got.lower() == span.lower()
+
+
+@pytest.mark.parametrize("value,question", [
+    ("early mobilization", "Early versus delayed antibiotics for sepsis"),  # not in the question
+    ("early antibiotics", "Early antibiotics"),                             # verbatim, not elided
+    ("early sepsis", "Early versus delayed antibiotics for sepsis"),        # tail too far away
+    ("antibiotics", "Early versus delayed antibiotics for sepsis"),         # single word
+])
+def test_elided_span_rejects_anything_else(value, question):
+    from clinical_engine.interpretation.model_reading import elliptical_span
+    assert elliptical_span(value, question) is None
+
+
+async def test_both_arms_listed_as_interventions_keeps_the_comparator():
+    q = "Apixaban versus warfarin for stroke prevention in atrial fibrillation patients over 80"
+    gw = FakeGateway({"question_type": "treatment", "elements": [
+        {"role": "intervention", "value": "apixaban", "stated": True, "quote": "Apixaban"},
+        {"role": "intervention", "value": "warfarin", "stated": True, "quote": "warfarin"},
+        {"role": "condition", "value": "atrial fibrillation", "stated": True, "quote": "atrial fibrillation"},
+        {"role": "population", "value": "older_adult", "stated": True, "quote": "patients over 80"},
+        {"role": "outcome", "value": "stroke prevention", "stated": True, "quote": "stroke prevention"},
+    ]})
+    result = await interpret(q, gateway=gw)
+    cqm = result.map
+    assert [e.value for e in cqm.active("intervention")] == ["apixaban"]
+    assert [e.value.lower() for e in cqm.active("comparator")] == ["warfarin"]
+    assert not [c for c in result.conflicts if c.severity == "blocking"]
+    assert cqm.summary == ("Effect of apixaban compared with warfarin on stroke prevention "
+                           "in older adults with atrial fibrillation.")
+
+
+async def test_early_versus_delayed_reads_as_two_arms():
+    q = "Early versus delayed antibiotics for emergency department patients with sepsis"
+    gw = FakeGateway({"question_type": "treatment", "elements": [
+        {"role": "condition", "value": "sepsis", "stated": True, "quote": "patients with sepsis"},
+        {"role": "intervention", "value": "early antibiotics", "stated": True, "quote": "Early antibiotics"},
+        {"role": "intervention", "value": "delayed antibiotics", "stated": True, "quote": "delayed antibiotics"},
+    ]})
+    result = await interpret(q, gateway=gw)
+    cqm = result.map
+    assert [e.value for e in cqm.active("intervention")] == ["early antibiotics"]
+    assert [e.value for e in cqm.active("comparator")] == ["delayed antibiotics"]
+    assert not cqm.suggestions() and not [c for c in result.conflicts if c.severity == "blocking"]
+    assert cqm.summary == ("Effect of early antibiotics compared with delayed antibiotics on clinical outcomes "
+                           "in patients with sepsis in the emergency department.")
+
+
+def test_rules_fill_the_elided_noun_only_between_modifiers():
+    r = roles(rules.read("Early versus delayed antibiotics for emergency department patients with sepsis"))
+    assert r["intervention"] == ["early antibiotics"] and r["comparator"] == ["delayed antibiotics"]
+    r = roles(rules.read("Surgery versus medical therapy for patients with angina"))
+    assert r["intervention"] == ["surgery"] and r["comparator"] == ["medical therapy"]
+
+
+async def test_incidence_after_a_procedure_keeps_the_patient_group():
+    q = "What is the incidence of acute kidney injury after cardiac surgery?"
+    r = roles(rules.read(q))
+    assert r["condition"] == ["acute kidney injury"] and r["population"] == ["cardiac surgery"]
+    gw = FakeGateway({"question_type": "epidemiology", "elements": [
+        {"role": "condition", "value": "acute kidney injury", "stated": True, "quote": "acute kidney injury"},
+        {"role": "population", "value": "cardiac surgery patients", "stated": False, "quote": None},
+        {"role": "outcome", "value": "incidence", "stated": True, "quote": "incidence"},
+    ]})
+    cqm = (await interpret(q, gateway=gw)).map
+    assert cqm.summary == "How common acute kidney injury is in cardiac surgery patients."
+    assert not cqm.suggestions()  # the model's restatement of the stated group is not offered again
+
+
+def test_treatment_with_an_outcome_but_no_condition_is_confirmable_with_a_warning():
+    cqm = _cqm("treatment", el("intervention", "ketamine"), el("outcome", "agitation"),
+               el("setting", "emergency department"))
+    conflicts, warnings = check(cqm)
+    assert not [c for c in conflicts if c.severity == "blocking"]
+    assert any("No condition or patient group" in w for w in warnings)
+    assert "missing_core_element" in codes(_cqm("treatment", el("intervention", "ketamine")))
+
+
+@pytest.mark.parametrize("qtype,elements,expected", [
+    ("treatment", [el("intervention", "dexamethasone"), el("outcome", "survival"),
+                   el("population", "hospitalized adults"), el("condition", "severe COVID-19"),
+                   el("age_group", "adult"), el("setting", "inpatient")],
+     "Effect of dexamethasone on survival in hospitalized adults with severe COVID-19."),
+    ("treatment", [el("intervention", "heparin"), el("condition", "pneumonia"), el("setting", "inpatient")],
+     "Effect of heparin on clinical outcomes in patients with pneumonia in hospital."),
+    ("prevention", [el("intervention", "chlorhexidine bathing"), el("outcome", "bloodstream infections"),
+                    el("population", "ICU patients"), el("setting", "intensive care unit")],
+     "Prevention of bloodstream infections with chlorhexidine bathing in ICU patients."),
+    ("screening", [el("population", "adults with type 2 diabetes"),
+                   el("index_test", "screening for diabetic retinopathy"),
+                   el("outcome", "diabetic retinopathy"), el("age_group", "adult")],
+     "Whether screening adults with type 2 diabetes for diabetic retinopathy improves outcomes."),
+    ("screening", [el("index_test", "mammography"), el("outcome", "breast cancer mortality"),
+                   el("population", "women")],
+     "Whether screening women with mammography improves breast cancer mortality."),
+    ("clinical_management", [el("condition", "stage 4 prostate cancer")],
+     "How to manage stage 4 prostate cancer."),
+])
+def test_summary_wording_from_the_trial(qtype, elements, expected):
+    assert build_summary(_cqm(qtype, *elements)) == expected
+
+
+async def test_a_setting_must_be_a_place_of_care():
+    q = "Timing and dose of corticosteroids in ARDS"
+    gw = FakeGateway({"question_type": "clinical_management", "elements": [
+        {"role": "intervention", "value": "corticosteroids", "stated": True, "quote": "corticosteroids"},
+        {"role": "condition", "value": "acute respiratory distress syndrome", "stated": True, "quote": "ARDS"},
+        {"role": "setting", "value": "timing and dose", "stated": True, "quote": "Timing and dose"},
+    ]})
+    result = await interpret(q, gateway=gw)
+    assert not result.map.active("setting")
+    assert [e.value for e in result.map.suggestions()] == ["timing and dose"]  # still offered, not applied
+    assert result.map.summary == "How to manage acute respiratory distress syndrome with corticosteroids."
+    out = validate_model_output("Steroids for sepsis in low-income countries", {"question_type": "treatment", "elements": [
+        {"role": "setting", "value": "low-income countries", "stated": True, "quote": "low-income countries"}]})
+    assert out.elements[0].active
+
+
+def test_one_malformed_element_does_not_discard_the_reading():
+    q = "How accurate is procalcitonin for diagnosing sepsis?"
+    out = validate_model_output(q, {"question_type": "diagnosis", "elements": [
+        {"role": "index_test", "value": "procalcitonin", "stated": True, "quote": "procalcitonin"},
+        {"role": "condition", "value": "sepsis", "stated": True, "quote": "sepsis"},
+        {"role": "reference_standard", "value": None, "stated": False},  # model did not know it
+    ]})
+    assert out.question_type == "diagnosis"
+    assert [(e.role, e.value) for e in out.elements] == [("index_test", "procalcitonin"), ("condition", "sepsis")]
+    assert out.rejected == ["element_invalid"]
+    assert validate_model_output(q, ["not", "a", "dict"]).rejected == ["schema_invalid"]

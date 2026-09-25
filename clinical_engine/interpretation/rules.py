@@ -197,6 +197,26 @@ def _strip(value: str) -> str:
     return v[:120]
 
 
+# Words that make one arm of a comparison: "Early versus delayed antibiotics".
+_ARM_MODIFIERS = {
+    "early", "late", "delayed", "immediate", "deferred", "prompt", "rapid", "high", "low", "higher", "lower",
+    "high-dose", "low-dose", "standard-dose", "short", "long", "short-course", "long-course", "restrictive",
+    "liberal", "conservative", "aggressive", "intensive", "continuous", "intermittent", "oral", "intravenous",
+    "iv", "topical", "inhaled", "subcutaneous", "intramuscular", "fixed", "weight-based", "single", "multiple",
+    "daily", "weekly",
+}
+# "acute kidney injury after cardiac surgery": the condition, then who the patients are.
+_AFTER_EVENT = re.compile(r"^(?P<c>.+?)\s+(?:after|following)\s+(?P<e>.+)$", re.I)
+
+
+def _fill_elided_head(arm: str, other: str) -> str:
+    """'Early' vs 'delayed antibiotics' → 'Early antibiotics' (the shared noun is left out)."""
+    a, o = arm.split(), other.split()
+    if len(a) == 1 and len(o) >= 2 and a[0].lower() in _ARM_MODIFIERS and o[0].lower() in _ARM_MODIFIERS:
+        return f"{arm} {' '.join(o[1:])}"
+    return arm
+
+
 _GENERIC_POP = re.compile(
     r"(?i)^(?:(?:the|all|any)\s+)?(?:patients?|people|persons?|individuals?|subjects?|population|cases?|those|"
     r"adults?|children|infants?|neonates?|women|men|elderly|older adults?|adolescents?)$"
@@ -298,7 +318,12 @@ def read(question: str) -> RulesReading:
     if not matched and qtype == "epidemiology":
         m = _EPI.search(text)
         if m:
-            add("condition", m.group("c"))
+            after = _AFTER_EVENT.match(m.group("c"))
+            if after:
+                add("condition", after.group("c"))
+                add("population", after.group("e"))
+            else:
+                add("condition", m.group("c"))
             if m.group("pop"):
                 cond, desc = _condition_from_population(m.group("pop"))
                 add("population", cond or desc)
@@ -360,6 +385,8 @@ def read(question: str) -> RulesReading:
                 outcome = groups.get("o")
                 if intervention:
                     intervention = _TRAILING_POP.sub("", intervention)
+                    if groups.get("cmp"):
+                        intervention = _fill_elided_head(intervention, groups["cmp"])
                     role = "exposure" if qtype in ("harm", "etiology_risk") else "intervention"
                     add(role, intervention)
                 if groups.get("cmp"):

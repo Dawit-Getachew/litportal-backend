@@ -7,7 +7,8 @@ from clinical_engine.contracts.question import ClinicalQuestionMap, IntentConfli
 
 # What a question type needs before evidence can be searched for it.
 REQUIRED_ROLES: dict[str, list[tuple[str, ...]]] = {
-    "treatment": [("intervention",), ("condition", "population")],
+    # "Does ketamine reduce agitation?" is answerable: the outcome says who it is for.
+    "treatment": [("intervention",), ("condition", "population", "outcome")],
     "prevention": [("intervention",), ("condition", "population", "outcome")],
     "harm": [("exposure", "intervention")],
     "etiology_risk": [("exposure", "intervention", "prognostic_factor"), ("outcome", "condition")],
@@ -84,6 +85,10 @@ def check(cqm: ClinicalQuestionMap) -> tuple[list[IntentConflict], list[str]]:
             message=f"Age group {sorted(ages & negated_ages)} is both included and excluded.",
         ))
 
+    if cqm.question_type == "treatment" and not (cqm.active("condition") or cqm.active("population")):
+        warnings.append(
+            "No condition or patient group stated — results may cover any patients. Add one if it matters."
+        )
     if not cqm.active("age_group"):
         warnings.append(
             "No age group stated — results will not be limited to adults or children. "

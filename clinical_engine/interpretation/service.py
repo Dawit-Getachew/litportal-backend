@@ -104,7 +104,29 @@ def merge(reading: rules.RulesReading, model: Optional[ModelReading]) -> tuple[s
         # "Does X prevent delirium?": delirium is the outcome; the patients do not have it yet.
         outcomes = {_key(e)[1] for e in unique if e.role == "outcome" and e.active}
         unique = [e for e in unique if not (e.role == "condition" and _key(e)[1] in outcomes)]
+
+    # "A versus B": the model often lists both arms as interventions while B is also the
+    # comparator, which would block approval as a self-comparison. B stays the comparator
+    # (only when another arm remains). Same equality as consistency.check.
+    comparators = {_same(e.value) for e in unique if e.role == "comparator" and e.active}
+    for role in ("intervention", "exposure", "index_test"):
+        arms = [e for e in unique if e.role == role and e.active]
+        if comparators and any(_same(e.value) not in comparators for e in arms):
+            unique = [e for e in unique if not (e.role == role and e.active and _same(e.value) in comparators)]
+
+    # A suggestion that only restates an applied element ("cardiac surgery patients" next to
+    # the stated "cardiac surgery") adds nothing to accept.
+    applied = {(e.role, _core(e.value)) for e in unique if e.active}
+    unique = [e for e in unique if e.active or (e.role, _core(e.value)) not in applied]
     return qtype, unique, ambiguities
+
+
+def _same(value: str) -> str:
+    return " ".join(value.lower().replace("-", " ").split())
+
+
+def _core(value: str) -> str:
+    return _same(re.sub(r"(?i)\b(?:patients?|people|persons?|individuals?|subjects?)\b", " ", value))
 
 
 def _user_prompt(question: str) -> str:

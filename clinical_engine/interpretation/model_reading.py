@@ -53,7 +53,9 @@ roles:
   index_test / reference_standard — diagnosis and screening questions only.
   outcome — what is measured (e.g. 28-day mortality). For prevention or incidence questions the prevented
     or incident condition is an outcome, not a condition.
-  prognostic_factor, setting, time_frame, study_design, publication_window, sex, pregnancy.
+  setting — where care happens (e.g. intensive care unit, emergency department, primary care, nursing home,
+    low-income countries). Timing, dose or duration is never a setting.
+  prognostic_factor, time_frame, study_design, publication_window, sex, pregnancy.
   age_group values: neonate, infant, child, adolescent, pediatric, adult, older_adult, all_ages.
 
 Rules:
@@ -106,7 +108,21 @@ def _norm(text: str) -> str:
 _AGE_ONLY = re.compile(
     r"(?i)^(?:(?:the|all|any)\s+)?(?:adults?|adult patients|children|child|kids|infants?|neonates?|newborns?|"
     r"adolescents?|teenagers?|elderly|older adults?|older patients|pediatric(?: patients)?|paediatric(?: patients)?|"
-    r"patients?|people|persons?|individuals?)$"
+    r"patients?|people|persons?|individuals?|all ages)$"
+)
+# "patients over 80", "aged 65 and older", ">= 18 years": an age, not a patient group.
+_AGE_EXPRESSION = re.compile(
+    r"(?i)^(?:(?:patients?|people|persons?|individuals?|adults?)\s+)?(?:(?:aged|age)\s+)?"
+    r"(?:(?:over|above|older than|under|below|younger than|at least)\s+|[<>]=?\s*|[≥≤]\s*)?"
+    r"\d{1,3}(?:\s*(?:-|–|to)\s*\d{1,3})?\s*(?:\+|years?|yrs?)?(?:\s+(?:old|of age))?"
+    r"(?:\s+(?:and|or)\s+(?:older|over|above|younger|under))?$"
+)
+# "treatment options", "best therapy": the question's wording, not a treatment to evaluate.
+_GENERIC_INTERVENTION = re.compile(
+    r"(?i)^(?:the\s+)?(?:(?:best|optimal|current|first[- ]line|second[- ]line|available|possible|different|other|"
+    r"new|newer|latest|recommended|appropriate|effective)\s+)?"
+    r"(?:treatments?|therap(?:y|ies)|management|interventions?|options?|strateg(?:y|ies)|approach(?:es)?|"
+    r"modalit(?:y|ies))(?:\s+(?:options?|strateg(?:y|ies)|approach(?:es)?|choices?|modalit(?:y|ies)))?$"
 )
 _GENERIC_OUTCOME = re.compile(
     r"(?i)^(?:the\s+)?(?:impact|effects?|efficacy|effectiveness|benefits?|outcomes?|clinical outcomes?|results?|"
@@ -114,6 +130,15 @@ _GENERIC_OUTCOME = re.compile(
 )
 _DIAGNOSTIC_VERB = re.compile(r"(?i)^(?:diagnosing|detecting|diagnosis of|detection of|ruling out|rule out)\s+")
 _EMBEDDED_COMPARISON = re.compile(r"(?i)\s+(?:compared (?:with|to)|versus|vs\.?)\s+.*$")
+# A setting is a place or context of care; anything else ("timing and dose") is misfiled.
+_CARE_PLACE = re.compile(
+    r"(?i)\b(?:units?|icu|nicu|picu|ccu|wards?|departments?|ed|a&e|hospitals?|clinics?|care|homes?|community|"
+    r"settings?|rooms?|theat(?:re|er)s?|practices?|cent(?:re|er)s?|facilit(?:y|ies)|pre-?hospital|out-of-hospital|"
+    r"in-hospital|outpatients?|inpatients?|ambulatory|emergency|nursing|primary|intensive|critical|perioperative|"
+    r"postoperative|intraoperative|operating|schools?|prisons?|military|rural|urban|tele(?:health|medicine)|"
+    r"ambulances?|offices?|hospice|palliative|rehabilitation|dialysis|countries|country|lmics?|low-income|"
+    r"middle-income|high-income|resource|regions?|nationwide|national|global|worldwide)\b"
+)
 
 
 _PLACEHOLDER = re.compile(
@@ -126,8 +151,12 @@ def clean_element(role: str, value: str) -> tuple[Optional[str], str]:
     """Deterministic clean-up of a model element → (role or None to drop, value)."""
     if _PLACEHOLDER.match(value.strip()):
         return None, value  # a role name is not a value ("intervention?")
-    if role == "population" and _AGE_ONLY.match(value.strip()):
-        return None, value  # age belongs in age_group; generic nouns add nothing
+    if role == "population":
+        v = value.strip().replace("_", " ")  # the model sometimes echoes an age code ("older_adult")
+        if _AGE_ONLY.match(v) or _AGE_EXPRESSION.match(v):
+            return None, value  # age belongs in age_group; generic nouns add nothing
+    if role == "intervention" and _GENERIC_INTERVENTION.match(value.strip()):
+        return None, value
     if role == "outcome" and _GENERIC_OUTCOME.match(value.strip()):
         return None, value  # "impact"/"effect" is the question's verb, not a measurable outcome
     if role in ("outcome", "condition") and _DIAGNOSTIC_VERB.match(value):
@@ -142,6 +171,46 @@ def quote_in_question(quote: str, question: str) -> bool:
     return bool(q) and f" {q} " in f" {_norm(question)} "
 
 
+_COORDINATORS = ("versus", "vs", "or", "and")
+# The words between the arms describe the other arm ("delayed"); a preposition or article
+# means the phrase has moved on ("… antibiotics for sepsis").
+_NOT_A_MODIFIER = {
+    "for", "in", "of", "with", "to", "on", "among", "after", "before", "at", "by", "from", "the", "a", "an",
+    "and", "or", "versus", "vs", "compared", "than", "as", "per", "into", "within", "without", "during",
+    "over", "under", "who", "that", "which", "is", "are", "does", "do",
+}
+
+
+def elliptical_span(value: str, question: str) -> Optional[str]:
+    """'Early versus delayed antibiotics' states 'early antibiotics' with the shared noun
+    left out. Accept a value whose first words appear verbatim just before
+    versus/vs/or/and/compared with|to and whose remaining words appear verbatim after one
+    to three modifier words of the other arm; return that span of the question. Nothing
+    else is accepted."""
+    v, q = _norm(value).split(), _norm(question).split()
+    for k in range(1, len(v)):
+        head, tail = v[:k], v[k:]
+        for i in range(len(q) - k + 1):
+            if q[i:i + k] != head:
+                continue
+            j = i + k
+            if j < len(q) and q[j] in _COORDINATORS:
+                j += 1
+            elif q[j:j + 2] in (["compared", "with"], ["compared", "to"]):
+                j += 2
+            else:
+                continue
+            for gap in (1, 2, 3):
+                end = j + gap + len(tail)
+                if any(w in _NOT_A_MODIFIER for w in q[j:j + gap]):
+                    break
+                if q[j + gap:end] == tail:
+                    words = q[i:end]
+                    m = re.search(r"\b" + r"\W+".join(words) + r"\b", question, re.I)
+                    return m.group(0) if m else " ".join(words)
+    return None
+
+
 @dataclass
 class ModelReading:
     question_type: Optional[str]
@@ -153,10 +222,21 @@ class ModelReading:
 def validate_model_output(question: str, raw: dict[str, Any]) -> ModelReading:
     """Turn raw model JSON into verified elements. Never raises."""
     rejected: list[str] = []
+    raw_elements = raw.get("elements", []) if isinstance(raw, dict) else None
+    if not isinstance(raw_elements, list):
+        return ModelReading(None, [], [], ["schema_invalid"])
     try:
-        parsed = _ModelOutput.model_validate(raw)
+        parsed = _ModelOutput.model_validate({**raw, "elements": []})
     except ValidationError:
         return ModelReading(None, [], [], ["schema_invalid"])
+    # One malformed element (e.g. "value": null for an unknown reference standard)
+    # drops that element only, not the whole reading.
+    items: list[_ModelElement] = []
+    for item in raw_elements[:40]:
+        try:
+            items.append(_ModelElement.model_validate(item))
+        except ValidationError:
+            rejected.append("element_invalid")
 
     qtype = parsed.question_type.strip().lower()
     if qtype not in QUESTION_TYPES:
@@ -166,7 +246,7 @@ def validate_model_output(question: str, raw: dict[str, Any]) -> ModelReading:
     from clinical_engine.interpretation.rules import _age_elements  # local: shared age lexicon
 
     elements: list[QuestionElement] = []
-    for item in parsed.elements[: MAX_ELEMENTS * 2]:
+    for item in items[: MAX_ELEMENTS * 2]:
         role = item.role.strip().lower()
         value = " ".join(item.value.split())[:120]
         if role not in ROLES:
@@ -193,11 +273,16 @@ def validate_model_output(question: str, raw: dict[str, Any]) -> ModelReading:
                 span = quote
             elif quote_in_question(value, question):
                 span = value
+            elif ellipsis := elliptical_span(value, question):
+                span = ellipsis
             else:
                 rejected.append(f"unsupported_quote:{role}")
                 stated = False
         if stated and role == "age_group" and not _age_elements(span or ""):
             rejected.append("age_group_without_age_words")
+            stated = False
+        if stated and role == "setting" and not _CARE_PLACE.search(value):
+            rejected.append("setting_not_a_place")
             stated = False
         elements.append(QuestionElement(
             role=role, value=value,
