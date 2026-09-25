@@ -43,10 +43,18 @@ question_type — one of:
   background (definition / mechanism), other.
   "Impact/effect/efficacy of <drug or procedure> on <outcome>" is treatment (or prevention), not prognosis.
 
-roles: condition, population, age_group, sex, pregnancy, intervention, exposure, index_test,
-  comparator, reference_standard, prognostic_factor, outcome, setting, time_frame, study_design,
-  publication_window. age_group values: neonate, infant, child, adolescent, pediatric, adult,
-  older_adult, all_ages.
+roles:
+  condition — the disease or state the patients HAVE (e.g. septic shock). In diagnosis questions it is
+    the target condition being diagnosed (e.g. sepsis), not the reason for testing.
+  population — who the patients are beyond condition and age (e.g. critically ill, mechanically ventilated,
+    postmenopausal women, suspected infection). Never an age alone: use age_group for age.
+  intervention / comparator — the treatments or strategies being compared (e.g. hydrocortisone taper vs
+    abrupt discontinuation). exposure — a non-treatment exposure, or a drug studied for harm.
+  index_test / reference_standard — diagnosis and screening questions only.
+  outcome — what is measured (e.g. 28-day mortality). For prevention or incidence questions the prevented
+    or incident condition is an outcome, not a condition.
+  prognostic_factor, setting, time_frame, study_design, publication_window, sex, pregnancy.
+  age_group values: neonate, infant, child, adolescent, pediatric, adult, older_adult, all_ages.
 
 Rules:
 - "stated": true ONLY if the element is in the question; then "quote" MUST be copied verbatim from it.
@@ -54,7 +62,8 @@ Rules:
   an age group) as "stated": false. NEVER state an age group the question does not mention.
 - The condition the patients have is NOT an outcome, unless the question is about preventing it
   or its incidence.
-- Values are short (max 8 words) canonical clinical terms, e.g. "steroids" -> "corticosteroids".
+- Values are short noun phrases (max 8 words), canonical clinical terms, e.g. "steroids" -> "corticosteroids";
+  no verbs such as "diagnosing", and never another element inside a value.
 - Mark patient-important outcomes such as mortality as "critical".
 - No citations, identifiers, URLs, study names or recommendations. JSON only."""
 
@@ -92,6 +101,26 @@ _AGE_SYNONYMS = {
 
 def _norm(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+_AGE_ONLY = re.compile(
+    r"(?i)^(?:(?:the|all|any)\s+)?(?:adults?|adult patients|children|child|kids|infants?|neonates?|newborns?|"
+    r"adolescents?|teenagers?|elderly|older adults?|older patients|pediatric(?: patients)?|paediatric(?: patients)?|"
+    r"patients?|people|persons?|individuals?)$"
+)
+_DIAGNOSTIC_VERB = re.compile(r"(?i)^(?:diagnosing|detecting|diagnosis of|detection of|ruling out|rule out)\s+")
+_EMBEDDED_COMPARISON = re.compile(r"(?i)\s+(?:compared (?:with|to)|versus|vs\.?)\s+.*$")
+
+
+def clean_element(role: str, value: str) -> tuple[Optional[str], str]:
+    """Deterministic clean-up of a model element → (role or None to drop, value)."""
+    if role == "population" and _AGE_ONLY.match(value.strip()):
+        return None, value  # age belongs in age_group; generic nouns add nothing
+    if role in ("outcome", "condition") and _DIAGNOSTIC_VERB.match(value):
+        return "condition", _DIAGNOSTIC_VERB.sub("", value).strip()
+    if role in ("outcome", "intervention", "exposure", "condition"):
+        value = _EMBEDDED_COMPARISON.sub("", value).strip()
+    return role, value
 
 
 def quote_in_question(quote: str, question: str) -> bool:
@@ -132,6 +161,10 @@ def validate_model_output(question: str, raw: dict[str, Any]) -> ModelReading:
         if _CITATIONISH.search(value):
             rejected.append(f"citation_like:{role}")
             continue
+        cleaned_role, value = clean_element(role, value)
+        if cleaned_role is None or not value:
+            continue
+        role = cleaned_role
         if role == "age_group":
             mapped = _AGE_SYNONYMS.get(value.lower(), value.lower())
             if mapped not in AGE_GROUPS:

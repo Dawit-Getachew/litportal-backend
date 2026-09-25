@@ -109,7 +109,7 @@ def _time_elements(text: str) -> list[QuestionElement]:
 # ── Question type ───────────────────────────────────────────────────────────
 
 _TYPE_CUES: list[tuple[str, str]] = [
-    ("diagnosis", r"\b(sensitivity|specificity|diagnostic (?:accuracy|performance|yield|value)|accuracy of|to (?:diagnose|detect|rule out)|for (?:diagnosing|detecting|the diagnosis of|the detection of)|rule[- ]out|predictive value|likelihood ratio|detect(?:ing|ion)? of)\b"),
+    ("diagnosis", r"\b(sensitivity|specificity|diagnostic (?:accuracy|performance|yield|value)|accuracy of|how accurate|to (?:diagnose|detect|rule out)|for (?:diagnosing|detecting|the diagnosis of|the detection of)|rule[- ]out|predictive value|likelihood ratio|detect(?:ing|ion)? of)\b"),
     ("screening", r"\b(screening|screen(?:ed)? for|be screened)\b"),
     ("prevention", r"\b(prevent(?:s|ing|ion)?|prophyla\w*|reduce the (?:risk|incidence) of|risk reduction)\b"),
     ("harm", r"\b(side[- ]effects?|adverse (?:events?|effects?|reactions?)|harms?|toxicit\w*|safety of|complications? of)\b"),
@@ -168,6 +168,8 @@ _PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(?:impact|effects?|efficacy|effectiveness|role|benefits?|influence|use)\s+of\s+(?P<i>.+?)\s+(?:on|in reducing|in improving|for)\s+(?P<o>.+?)" + _POP_TAIL + r"\s*[?.]?$", re.I),
     # does X reduce/improve Y (in P)
     re.compile(r"\b(?:does|do|did|can|could|will|would)\s+(?P<i>.+?)\s+(?:reduce|improve|lower|decrease|increase|shorten|prolong|affect|change|prevent)\s+(?P<o>.+?)" + _POP_TAIL + r"\s*[?.]?$", re.I),
+    # how accurate is X for diagnosing Y (in P)
+    re.compile(r"\bhow (?:accurate|sensitive|specific|reliable|useful) (?:is|are)\s+(?P<t>.+?)\s+(?:for|in|at|to)\s+(?:diagnos(?:e|ing|is of)|detect(?:ing|ion of)?|the diagnosis of|the detection of|rul(?:e|ing) out)\s+(?P<c>.+?)" + _POP_TAIL + r"\s*[?.]?$", re.I),
     # accuracy of X for diagnosing Y (in P)
     re.compile(r"\b(?:accuracy|sensitivity|specificity|performance|utility|value)\s+of\s+(?P<t>.+?)\s+(?:for|in|to)\s+(?:diagnos(?:e|ing|is of)|detect(?:ing|ion of)?|the diagnosis of|the detection of|rul(?:e|ing) out)\s+(?P<c>.+?)" + _POP_TAIL + r"\s*[?.]?$", re.I),
     # is X associated with Y (in P)
@@ -272,6 +274,8 @@ def read(question: str) -> RulesReading:
     def add(role: str, raw: Optional[str], conf: float = 0.75) -> None:
         if not raw:
             return
+        if role in ("outcome", "intervention", "exposure", "condition"):
+            raw = re.split(r"(?i)\s+(?:compared (?:with|to)|versus|vs\.?)\s+", raw)[0]
         value = _strip(raw)
         if value and not any(e.role == role and e.value.lower() == value.lower() for e in elements):
             elements.append(_elem(role, value, raw, conf))

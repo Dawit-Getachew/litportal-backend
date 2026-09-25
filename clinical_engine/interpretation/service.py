@@ -67,6 +67,18 @@ def merge(reading: rules.RulesReading, model: Optional[ModelReading]) -> tuple[s
         ambiguities.append(f"Question type was unclear; using '{reading.question_type}'.")
         qtype = reading.question_type
 
+    if qtype in ("treatment", "prevention") and not any(
+        e.active and e.role == "intervention" for e in model.elements
+    ) and not any(e.role == "intervention" for e in reading.elements):
+        # "What is the first-line treatment for X?" names no intervention to evaluate.
+        ambiguities.append("No specific intervention named; reading this as a management question.")
+        qtype = "clinical_management"
+
+    if qtype in ("diagnosis", "screening") and not any(e.active and e.role == "index_test" for e in model.elements):
+        for e in model.elements:
+            if e.role == "intervention" and e.active:
+                e.role = "index_test"  # the model named the test as an "intervention"
+
     rule_ages = [e for e in reading.elements if e.role == "age_group"]
     merged = [e for e in model.elements if not (rule_ages and e.role == "age_group")]
     merged.extend(rule_ages)

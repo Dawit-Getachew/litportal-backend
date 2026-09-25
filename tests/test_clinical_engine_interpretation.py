@@ -290,7 +290,7 @@ def test_edit_validation():
     ("diagnosis", [el("index_test", "procalcitonin"), el("condition", "sepsis")],
      "Accuracy of procalcitonin for diagnosing sepsis in patients."),
     ("etiology_risk", [el("exposure", "air pollution"), el("outcome", "asthma"), el("age_group", "child")],
-     "Whether air pollution is associated with asthma in children."),
+     "Association between air pollution and asthma in children."),
     ("background", [el("condition", "septic shock")], "Background on septic shock."),
 ])
 def test_summary_sentences(qtype, elements, expected):

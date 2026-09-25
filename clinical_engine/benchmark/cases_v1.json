@@ -333,7 +333,7 @@
    "id": "W15-06",
    "question": "What is the dose of milrinone for patients with acute subarchnoid hemorrhage?",
    "question_type_label": "dosing/pharmacology",
-   "engine_question_type": "harm",
+   "engine_question_type": "treatment",
    "family": "F03-milrinone-SAH-DCI",
    "split": "dev",
    "split_note": "dev",

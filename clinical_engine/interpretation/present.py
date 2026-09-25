@@ -1,6 +1,7 @@
 """What the clinician sees and edits: the one-line interpretation and chips."""
 from __future__ import annotations
 
+import re
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -51,8 +52,8 @@ ROLE_ORDER = [
     "prognostic_factor", "condition", "population", "age_group", "sex", "pregnancy", "setting",
     "time_frame", "study_design", "publication_window",
 ]
-_NOUN_ENDINGS = ("patients", "people", "women", "men", "adults", "children", "infants", "neonates",
-                 "smokers", "individuals", "residents", "workers", "athletes", "survivors")
+# Types where the patients' condition may also be the outcome of interest.
+_CONDITION_IS_OUTCOME_OK = {"prevention", "harm", "etiology_risk", "screening", "epidemiology"}
 
 
 def role_label(role: str, question_type: str) -> str:
@@ -123,21 +124,34 @@ def _join(values: list[str]) -> str:
     return ", ".join(values[:-1]) + " and " + values[-1]
 
 
-def population_phrase(cqm: ClinicalQuestionMap) -> str:
+_PEOPLE_NOUN = re.compile(
+    r"(?i)\b(patients?|people|persons?|adults?|children|child|infants?|neonates?|newborns?|women|men|"
+    r"adolescents?|smokers|individuals|residents|workers|athletes|survivors|elderly|recipients|users)\b"
+)
+_AGE_WORD = re.compile(r"(?i)\b(adults?|child|children|infants?|neonat\w*|newborns?|elderly|older|"
+                       r"p(?:a)?ediatric|adolescents?|teen\w*|geriatric)\b")
+
+
+def population_phrase(cqm: ClinicalQuestionMap, *, with_conditions: bool = True) -> str:
     ages = cqm.active("age_group")
-    noun = _AGE_NOUNS.get(ages[0].value, "patients") if ages else "patients"
+    age_noun = _AGE_NOUNS.get(ages[0].value) if ages else None
+    outcomes = {e.value.lower() for e in cqm.active("outcome")}
+    conditions = [e.value for e in cqm.active("condition")
+                  if not (cqm.question_type in _CONDITION_IS_OUTCOME_OK and e.value.lower() in outcomes)]
     descs = [e.value for e in cqm.active("population")]
-    if descs and descs[0].lower().endswith(_NOUN_ENDINGS):
-        head = descs[0] if not ages else f"{descs[0]} ({noun})"
-        descs = descs[1:]
-    else:
-        head = noun
     if descs:
-        head = f"{_join(descs)} {head}"
+        head = _join(descs)
+        if not _PEOPLE_NOUN.search(head):
+            head = f"{head} {age_noun or 'patients'}"
+        elif age_noun and not _AGE_WORD.search(head):
+            head = f"{head} ({age_noun})"
+    else:
+        head = age_noun or "patients"
     for e in cqm.active("pregnancy"):
         head = f"{head} ({e.value})"
-    conditions = [e.value for e in cqm.active("condition")]
-    phrase = f"{head} with {_join(conditions)}" if conditions else head
+    shown = [c for c in conditions if c.lower() not in head.lower()] if with_conditions else []
+    joiner = "and" if " with " in f" {head.lower()} " else "with"
+    phrase = f"{head} {joiner} {_join(shown)}" if shown else head
     excluded = [_display(e).lower() for e in cqm.elements if e.negated]
     if excluded:
         phrase += f" (excluding {_join(excluded)})"
@@ -165,14 +179,14 @@ def build_summary(cqm: ClinicalQuestionMap) -> str:
     if t == "treatment":
         s = f"Effect of {ints or 'the treatment'}{vs} on {outs or 'clinical outcomes'}{time_part} in {pop}"
     elif t == "prevention":
-        s = f"Whether {ints or 'the intervention'}{vs} prevents {outs or conds or 'the outcome'}{time_part} in {pop}"
+        s = f"Prevention of {outs or conds or 'the outcome'}{time_part} with {ints or 'the intervention'}{vs} in {pop}"
     elif t == "harm":
         s = f"Harms of {exps or 'the exposure'}{vs}" + (f" — {outs}" if outs else "") + f" in {pop}"
     elif t == "etiology_risk":
-        s = f"Whether {exps or 'the exposure'} is associated with {outs or conds or 'the outcome'} in {pop}"
+        s = f"Association between {exps or 'the exposure'} and {outs or conds or 'the outcome'} in {pop}"
     elif t == "diagnosis":
         s = f"Accuracy of {tests or 'the test'} for diagnosing {conds or 'the condition'}"
-        s += f" in {population_phrase(cqm.model_copy(update={'elements': [e for e in cqm.elements if e.role != 'condition']}))}"
+        s += f" in {population_phrase(cqm, with_conditions=False)}"
         if refs:
             s += f" (reference standard: {refs})"
     elif t == "screening":
@@ -180,9 +194,13 @@ def build_summary(cqm: ClinicalQuestionMap) -> str:
     elif t == "prognosis":
         s = "Prognosis" + (f" ({outs})" if outs else "") + f" of {pop}" + (f" by {factors}" if factors else "")
     elif t == "epidemiology":
-        s = f"How common {conds or outs or 'the condition'} is in {population_phrase(cqm.model_copy(update={'elements': [e for e in cqm.elements if e.role != 'condition']}))}"
+        s = f"How common {conds or outs or 'the condition'} is in {population_phrase(cqm, with_conditions=False)}"
     elif t == "clinical_management":
-        s = f"How to manage {conds or 'the condition'}" + (f" in {pop}" if cqm.active('age_group') or cqm.active('population') or cqm.active('setting') else "")
+        s = f"How to manage {conds or 'the condition'}"
+        if ints:
+            s += f" with {ints}"
+        if cqm.active("age_group") or cqm.active("population") or cqm.active("setting"):
+            s += f" in {population_phrase(cqm, with_conditions=False)}"
     elif t == "background":
         s = f"Background on {conds or ints or exps or tests or cqm.question_text.rstrip('?')}"
     else:
