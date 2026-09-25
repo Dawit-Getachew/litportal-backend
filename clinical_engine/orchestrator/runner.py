@@ -206,9 +206,11 @@ async def drive(run_id: str) -> None:
             claimed = await store.claim_task(ready[0], settings.LEASE_SECONDS)
             if claimed is None:
                 continue  # lost the race to another driver
-            await trace(run, "task_claimed", task=claimed, key=claimed["key"],
-                        attempt=int(claimed.get("attempts", 0)) + 1,
-                        resumed_from_checkpoint=bool(claimed.get("checkpoint")))
+            routine_poll = ready[0]["status"] == "pending" and bool((ready[0].get("checkpoint") or {}).get("polls"))
+            if not routine_poll:  # first claim, retry, or recovery of a dead worker's task
+                await trace(run, "task_claimed", task=claimed, key=claimed["key"],
+                            attempt=int(claimed.get("attempts", 0)) + 1,
+                            resumed_from_checkpoint=bool(claimed.get("checkpoint")))
             await _execute(run, claimed, by_key)
     except asyncio.CancelledError:
         raise  # shutdown: leases lapse and another driver resumes the run
