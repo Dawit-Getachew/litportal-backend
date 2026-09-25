@@ -25,6 +25,7 @@ _AGE_OVER_89 = re.compile(r"\b(?:9\d|1[0-2]\d)[- ]?(?:years?|yrs?|yo)[- ]?(?:old
 _CORE_ROLES = ("condition", "population", "intervention", "exposure", "index_test", "comparator",
                "reference_standard", "outcome", "prognostic_factor")
 _RULE_ONLY_ROLES = ("setting", "time_frame", "publication_window")
+_OUTCOME_IS_THE_CONDITION = {"prevention", "etiology_risk", "screening", "epidemiology", "harm"}
 
 
 @dataclass
@@ -99,6 +100,10 @@ def merge(reading: rules.RulesReading, model: Optional[ModelReading]) -> tuple[s
             continue
         seen.add(k)
         unique.append(e)
+    if qtype in _OUTCOME_IS_THE_CONDITION:
+        # "Does X prevent delirium?": delirium is the outcome; the patients do not have it yet.
+        outcomes = {_key(e)[1] for e in unique if e.role == "outcome" and e.active}
+        unique = [e for e in unique if not (e.role == "condition" and _key(e)[1] in outcomes)]
     return qtype, unique, ambiguities
 
 

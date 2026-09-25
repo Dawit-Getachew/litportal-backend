@@ -141,6 +141,26 @@ def test_generic_effect_words_are_not_outcomes():
     assert [(e.role, e.value) for e in out.elements] == [("outcome", "28-day mortality")]
 
 
+def test_role_name_placeholders_are_dropped():
+    out = validate_model_output(Q, {"question_type": "harm", "elements": [
+        {"role": "intervention", "value": "intervention", "stated": False},
+        {"role": "exposure", "value": "the exposure", "stated": False},
+    ]})
+    assert out.elements == []
+
+
+async def test_prevention_outcome_is_not_also_a_condition():
+    gw = FakeGateway({"question_type": "prevention", "elements": [
+        {"role": "intervention", "value": "early mobilization", "stated": True, "quote": "early mobilization"},
+        {"role": "outcome", "value": "delirium", "stated": True, "quote": "delirium"},
+        {"role": "condition", "value": "delirium", "stated": True, "quote": "delirium"},
+    ]})
+    result = await interpret("Does early mobilization prevent delirium in critically ill older adults?", gateway=gw)
+    assert [e.value for e in result.map.active("condition")] == []
+    assert [e.value for e in result.map.active("outcome")] == ["delirium"]
+    assert result.map.summary.startswith("Prevention of delirium with early mobilization")
+
+
 def test_schema_invalid_model_output():
     assert validate_model_output(Q, {"elements": "nope"}).rejected == ["schema_invalid"]
 

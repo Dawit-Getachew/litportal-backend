@@ -116,8 +116,16 @@ _DIAGNOSTIC_VERB = re.compile(r"(?i)^(?:diagnosing|detecting|diagnosis of|detect
 _EMBEDDED_COMPARISON = re.compile(r"(?i)\s+(?:compared (?:with|to)|versus|vs\.?)\s+.*$")
 
 
+_PLACEHOLDER = re.compile(
+    r"(?i)^(?:the\s+|a\s+|an\s+)?(?:intervention|exposure|outcome|condition|population|treatment|comparator|"
+    r"control|test|index test|drug|medication|disease|patients?|setting|unknown|none|n/?a|not specified)s?$"
+)
+
+
 def clean_element(role: str, value: str) -> tuple[Optional[str], str]:
     """Deterministic clean-up of a model element → (role or None to drop, value)."""
+    if _PLACEHOLDER.match(value.strip()):
+        return None, value  # a role name is not a value ("intervention?")
     if role == "population" and _AGE_ONLY.match(value.strip()):
         return None, value  # age belongs in age_group; generic nouns add nothing
     if role == "outcome" and _GENERIC_OUTCOME.match(value.strip()):
