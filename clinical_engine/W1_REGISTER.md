@@ -19,7 +19,7 @@ date; items that need the owner are listed at the end.
 
 | Flag | Default | AWS (CDK `stack.ts`) | Effect |
 |---|---|---|---|
-| `CLINICAL_ENGINE_ENABLED` | off | not set → **off** | Engine routes 404, nothing starts. |
+| `CLINICAL_ENGINE_ENABLED` | **on** (changed 2026-09-25 at the developer's request) | not set → **on** | Question review active wherever the frontend branch is deployed; set `false` to switch off. |
 | `LITPORTAL_USE_IDENTITY` | off | **on** | Login/signup delegated to Identity. |
 | `APP_ENV` | `development` | **not set** | See §7 (seed accounts). |
 | `SEED_TEST_USERS` | **true** | not set → **true** | See §7. |

@@ -9,7 +9,7 @@ from datetime import timedelta
 
 import pytest
 
-from clinical_engine import store
+from clinical_engine import lifecycle, store
 from clinical_engine.config import settings
 from clinical_engine.orchestrator import runner
 from clinical_engine.orchestrator import tasks as task_mod
@@ -22,6 +22,9 @@ Q = "Does hydrocortisone reduce 28-day mortality in adults with septic shock?"
 
 @pytest.fixture(autouse=True)
 async def engine_env(client, monkeypatch):
+    # The app's own recovery loop (started by the shared test app, engine on by
+    # default) must not race these tests' deliberate crash/pause scenarios.
+    await lifecycle.stop()
     monkeypatch.setattr(settings, "ENABLED", True)
     monkeypatch.setattr(settings, "POLL_INTERVAL_S", 0.05)
     monkeypatch.setattr(settings, "LEASE_SECONDS", 2)

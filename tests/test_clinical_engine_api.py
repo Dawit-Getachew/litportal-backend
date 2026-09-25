@@ -10,7 +10,7 @@ import uuid
 
 import pytest
 
-from clinical_engine import store
+from clinical_engine import lifecycle, store
 from clinical_engine.config import settings
 from clinical_engine.orchestrator import runner
 from core.db import Collections, get_db
@@ -22,6 +22,9 @@ PASSWORD = "EngineApi9!Password"
 
 @pytest.fixture(autouse=True)
 async def engine_on(client, monkeypatch):
+    # The app's own recovery loop (started by the shared test app, engine on by
+    # default) must not race these tests' deliberate crash/pause scenarios.
+    await lifecycle.stop()
     monkeypatch.setattr(settings, "ENABLED", True)
     monkeypatch.setattr(settings, "RETRIEVAL_ADAPTER", "mock")
     monkeypatch.setattr(settings, "POLL_INTERVAL_S", 0.05)

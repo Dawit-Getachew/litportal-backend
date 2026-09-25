@@ -9,8 +9,9 @@ a **durable orchestrator**, and the **typed contracts** the Week 2–4 work buil
   `jobs/ core/ models/ clients/ services/ routers/ agents/`, so they never ship or import it.
 - API: `/api/v2/engine/*` (also `/api/litportal/v2/engine/*`). **Additive only** — no existing
   route, request or response shape changed.
-- Default **off**: `CLINICAL_ENGINE_ENABLED=false` → every route except `/capabilities` answers 404
-  and nothing starts at boot. Production activation is a separate, explicit decision.
+- Default **on**. `CLINICAL_ENGINE_ENABLED=false` switches it off: every route except
+  `/capabilities` then answers 404, nothing starts at boot, and the frontend falls back to the
+  direct-search flow.
 
 ## The flow
 
@@ -138,7 +139,7 @@ longest; NCT links reports into a Study without merging them.
 
 | Env | Default | Meaning |
 |---|---|---|
-| `CLINICAL_ENGINE_ENABLED` | `false` | Master switch |
+| `CLINICAL_ENGINE_ENABLED` | `true` | Master switch (`false` = off) |
 | `CLINICAL_ENGINE_RETRIEVAL_ADAPTER` | `legacy_pipeline` | or `mock` (fixtures, never live evidence) |
 | `CLINICAL_ENGINE_INTERPRETER_MODEL` | provider default | Model for interpretation |
 | `CLINICAL_ENGINE_INTERPRETER_MAX_TOKENS` / `_TIMEOUT_S` | 900 / 20 | Per interpretation call |

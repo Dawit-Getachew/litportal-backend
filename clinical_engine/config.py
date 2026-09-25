@@ -27,8 +27,9 @@ def _float(name: str, default: float) -> float:
 
 
 class EngineSettings:
-    # Master switch. Default OFF: routes answer 404 and nothing runs at startup.
-    ENABLED: bool = _bool("CLINICAL_ENGINE_ENABLED", False)
+    # Master switch. Default ON; CLINICAL_ENGINE_ENABLED=false makes every route
+    # except /capabilities answer 404 and starts nothing at boot.
+    ENABLED: bool = _bool("CLINICAL_ENGINE_ENABLED", True)
 
     # Retrieval adapter used after approval (Week 1). "legacy_pipeline" starts the
     # existing search pipeline with the approved question; "mock" returns labelled
