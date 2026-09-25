@@ -171,4 +171,4 @@ unapproved/off-allowlist calls, budgets, bounded retries, supersession, delegati
 approval), `…_benchmark.py` (frozen set discipline).
 
 Benchmark baseline: `python -m clinical_engine.benchmark.run_interpretation_baseline [--model]`.
-See `benchmark/BENCHMARK_PLAN.md` and `docs/W1_REGISTER.md`.
+See `benchmark/BENCHMARK_PLAN.md` and `W1_REGISTER.md`.
