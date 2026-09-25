@@ -33,7 +33,8 @@ class EuropePMCResult(dict):
 def _build_url(*, pmcid: Optional[str], pmid: Optional[str]) -> Optional[str]:
     if pmcid:
         pmcid_clean = pmcid if pmcid.upper().startswith("PMC") else f"PMC{pmcid.lstrip('Pp').lstrip('Mm').lstrip('Cc')}"
-        return f"{_BASE}/PMC/{pmcid_clean}/fullTextXML"
+        # Documented form: /rest/{PMCID}/fullTextXML ("/rest/PMC/{PMCID}/…" answers 404).
+        return f"{_BASE}/{pmcid_clean}/fullTextXML"
     if pmid:
         return f"{_BASE}/MED/{pmid}/fullTextXML"
     return None
