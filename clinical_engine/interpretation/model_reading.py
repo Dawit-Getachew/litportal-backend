@@ -108,6 +108,10 @@ _AGE_ONLY = re.compile(
     r"adolescents?|teenagers?|elderly|older adults?|older patients|pediatric(?: patients)?|paediatric(?: patients)?|"
     r"patients?|people|persons?|individuals?)$"
 )
+_GENERIC_OUTCOME = re.compile(
+    r"(?i)^(?:the\s+)?(?:impact|effects?|efficacy|effectiveness|benefits?|outcomes?|clinical outcomes?|results?|"
+    r"role|use|usefulness|value|evidence|response)$"
+)
 _DIAGNOSTIC_VERB = re.compile(r"(?i)^(?:diagnosing|detecting|diagnosis of|detection of|ruling out|rule out)\s+")
 _EMBEDDED_COMPARISON = re.compile(r"(?i)\s+(?:compared (?:with|to)|versus|vs\.?)\s+.*$")
 
@@ -116,6 +120,8 @@ def clean_element(role: str, value: str) -> tuple[Optional[str], str]:
     """Deterministic clean-up of a model element → (role or None to drop, value)."""
     if role == "population" and _AGE_ONLY.match(value.strip()):
         return None, value  # age belongs in age_group; generic nouns add nothing
+    if role == "outcome" and _GENERIC_OUTCOME.match(value.strip()):
+        return None, value  # "impact"/"effect" is the question's verb, not a measurable outcome
     if role in ("outcome", "condition") and _DIAGNOSTIC_VERB.match(value):
         return "condition", _DIAGNOSTIC_VERB.sub("", value).strip()
     if role in ("outcome", "intervention", "exposure", "condition"):

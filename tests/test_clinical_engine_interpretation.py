@@ -131,6 +131,16 @@ def test_model_output_rejects_bad_types_roles_and_citations():
     assert {"question_type:magic", "role:hallucination", "citation_like:outcome", "age_value:martians"} <= set(out.rejected)
 
 
+def test_generic_effect_words_are_not_outcomes():
+    out = validate_model_output(Q, {"question_type": "treatment", "elements": [
+        {"role": "outcome", "value": "impact", "stated": False},
+        {"role": "outcome", "value": "Clinical outcomes", "stated": False},
+        {"role": "population", "value": "adults", "stated": False},
+        {"role": "outcome", "value": "28-day mortality", "stated": True, "quote": "28-day mortality"},
+    ]})
+    assert [(e.role, e.value) for e in out.elements] == [("outcome", "28-day mortality")]
+
+
 def test_schema_invalid_model_output():
     assert validate_model_output(Q, {"elements": "nope"}).rejected == ["schema_invalid"]
 
