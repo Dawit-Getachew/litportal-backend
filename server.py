@@ -29,6 +29,8 @@ from core.security import hash_password  # noqa: E402
 from models.source_configs import SourceConfigDoc  # noqa: E402
 from models.guideline_sources import GuidelineSourceDoc  # noqa: E402
 from models.users import UserDoc  # noqa: E402
+from clinical_engine import lifecycle as clinical_engine_lifecycle  # noqa: E402
+from clinical_engine.api.router import router as clinical_engine_router  # noqa: E402
 from routers import (  # noqa: E402
     access_locations,
     admin,
@@ -604,8 +606,11 @@ async def lifespan(app: FastAPI):
         )
     except Exception:
         logger.exception("startup failed")
+    # Clinical evidence engine (Week 1) — no-op unless CLINICAL_ENGINE_ENABLED.
+    await clinical_engine_lifecycle.start()
     yield
     # ---- shutdown ----
+    await clinical_engine_lifecycle.stop()
     try:
         app.state.lithub_sweeper_stop.set()
         await asyncio.wait_for(app.state.lithub_sweeper_task, timeout=5.0)
@@ -732,6 +737,7 @@ _API_ROUTERS = [
     chat_router.router,
     evidence_packets_router.clinician_router,
     evidence_packets_router.admin_router,
+    clinical_engine_router,
 ]
 for r in _API_ROUTERS:
     app.include_router(r, prefix="/api")

@@ -1,0 +1,979 @@
+{
+ "benchmark_version": "benchmark.v1-draft",
+ "status": "DRAFT — frozen for development; owner adjudication required before it gates anything",
+ "frozen_on": "2026-09-25",
+ "verified_via": "every PMID checked against PubMed esummary on 2026-09-25 (title/year shown are PubMed's); verified=true means PMID<->title identity only, NOT clinical adjudication",
+ "must_find_semantics": "must_find = references already designated in repo/client sources; candidate_refs = proposals needing physician adjudication",
+ "evidence_label_semantics": "historical = past UAT/session observations; fixture = repo-defined case/synthetic corpus; live = none yet (no live run performed); null = proposed case with no run evidence",
+ "cases": [
+  {
+   "id": "W15-01",
+   "question": "What is the impact of steroid administration in patients who are in the ICU with septic shock?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F01-corticosteroids-critical-illness",
+   "split": "dev",
+   "split_note": "dev (anchor regression)",
+   "specialty": "critical_care",
+   "origin": "client report 9.10.26 (verbatim question)",
+   "reference_source": "client_report (reference set NOT in workspace) + proposed candidates",
+   "evidence_label": "historical",
+   "must_find": [],
+   "candidate_refs": [
+    {
+     "pmid": "29347874",
+     "title": "Adjunctive Glucocorticoid Therapy in Patients with Septic Shock.",
+     "year": 2018,
+     "verified": true,
+     "source": "proposed",
+     "role": "main_trial_candidate (ADRENAL)"
+    },
+    {
+     "pmid": "29490185",
+     "title": "Hydrocortisone plus Fludrocortisone for Adults with Septic Shock.",
+     "year": 2018,
+     "verified": true,
+     "source": "proposed",
+     "role": "main_trial_candidate (APROCCHSS)"
+    },
+    {
+     "pmid": "41869847",
+     "title": "Surviving Sepsis Campaign: International Guidelines for Management of Sepsis and Septic Shock 2026.",
+     "year": 2026,
+     "verified": true,
+     "source": "proposed",
+     "role": "guideline_current (SSC 2026, CCM record)"
+    },
+    {
+     "pmid": "41870560",
+     "title": "Surviving Sepsis Campaign: international guidelines for management of sepsis and septic shock 2026.",
+     "year": 2026,
+     "verified": true,
+     "source": "proposed",
+     "role": "guideline_current (SSC 2026, ICM co-publication = same work)"
+    },
+    {
+     "pmid": "38240492",
+     "title": "2024 Focused Update: Guidelines on Use of Corticosteroids in Sepsis, Acute Respiratory Distress Syndrome, and Community-Acquired Pneumonia.",
+     "year": 2024,
+     "verified": true,
+     "source": "proposed",
+     "role": "guideline_focused_update (SCCM 2024)"
+    },
+    {
+     "pmid": "12186604",
+     "title": "Effect of treatment with low doses of hydrocortisone and fludrocortisone on mortality in patients with septic shock.",
+     "year": 2002,
+     "verified": true,
+     "source": "proposed",
+     "role": "landmark_rct"
+    },
+    {
+     "pmid": "18184957",
+     "title": "Hydrocortisone therapy for patients with septic shock.",
+     "year": 2008,
+     "verified": true,
+     "source": "proposed",
+     "role": "landmark_rct (CORTICUS)"
+    },
+    {
+     "pmid": "38320130",
+     "title": "Patient-Level Meta-Analysis of Low-Dose Hydrocortisone in Adults with Septic Shock.",
+     "year": 2023,
+     "verified": true,
+     "source": "proposed",
+     "role": "ipd_meta_analysis"
+    },
+    {
+     "pmid": "29979221",
+     "title": "Corticosteroids in Sepsis: An Updated Systematic Review and Meta-Analysis.",
+     "year": 2018,
+     "verified": true,
+     "source": "proposed",
+     "role": "meta_analysis"
+    },
+    {
+     "pmid": "31808551",
+     "title": "Corticosteroids for treating sepsis in children and adults.",
+     "year": 2019,
+     "verified": true,
+     "source": "proposed",
+     "role": "cochrane_review"
+    }
+   ],
+   "hard_negatives_and_fixtures": [
+    {
+     "pmid": "26903338",
+     "title": "The Third International Consensus Definitions for Sepsis and Septic Shock (Sepsis-3).",
+     "year": 2016,
+     "verified": true,
+     "source": "proposed",
+     "role": "wrong_destination_identity (Sepsis-3; report's corticosteroid-MA link opened this)"
+    },
+    {
+     "pmid": "34605781",
+     "title": "Surviving Sepsis Campaign: International Guidelines for Management of Sepsis and Septic Shock 2021.",
+     "year": 2021,
+     "verified": true,
+     "source": "proposed",
+     "role": "guideline_superseded (SSC 2021 CCM)"
+    },
+    {
+     "pmid": "34599691",
+     "title": "Surviving sepsis campaign: international guidelines for management of sepsis and septic shock 2021.",
+     "year": 2021,
+     "verified": true,
+     "source": "proposed",
+     "role": "guideline_superseded (SSC 2021 ICM)"
+    },
+    {
+     "pmid": "31651531",
+     "title": "Hydrocortisone Compared with Placebo in Patients with Septic Shock Satisfying the Sepsis-3 Diagnostic Criteria and APROCCHSS Study Inclusion Criteria: A Post Hoc Analysis of the ADRENAL Trial.",
+     "year": 2019,
+     "verified": true,
+     "source": "proposed",
+     "role": "separate_report (ADRENAL post hoc) - must not merge with main trial"
+    },
+    {
+     "pmid": "38310918",
+     "title": "Hydrocortisone plus fludrocortisone for community acquired pneumonia-related septic shock: a subgroup analysis of the APROCCHSS phase 3 randomised trial.",
+     "year": 2024,
+     "verified": true,
+     "source": "proposed",
+     "role": "separate_report (APROCCHSS CAP subgroup)"
+    },
+    {
+     "pmid": "35927963",
+     "title": "Abrupt Discontinuation Versus Taper of Hydrocortisone in Patients With Septic Shock.",
+     "year": 2023,
+     "verified": true,
+     "source": "proposed",
+     "role": "narrower_comparison (abrupt vs taper) - not a direct answer"
+    }
+   ],
+   "notes": "Client 8-work/9-record set absent from workspace; owner must supply. Known: both sites 0/8 in first 15; LitPortal had one reference at #47; both missed both 'must-find main trials'; Clinician-Answers excluded a 2026 SSC record as 'low relevance'; shared incorrect association example = corticosteroid meta-analysis link opening Sepsis-3. Hypothesis only: 9th record = SSC 2026 co-publication; main trials = ADRENAL + APROCCHSS. Other verified supporting refs: HYPRESS 27695824 (severe sepsis w/o shock: indirect), VANISH 27483065, Rygard 29761216, Fang 30575845, Lamontagne BMJ 30097460, CIRCI 2017 28938253/28940011/29095205/29090327."
+  },
+  {
+   "id": "W15-02",
+   "question": "What is the right timing and dose to administer steroids for patients with ARDS?",
+   "question_type_label": "therapy/dosing",
+   "engine_question_type": "treatment",
+   "family": "F01-corticosteroids-critical-illness",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "critical_care",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::ards_steroid_timing_dose; scripts/phase6g_fresh_query_validation.py Q4",
+   "reference_source": "repo_fixture (provisional, no gold) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [
+    {
+     "pmid": "17426195",
+     "title": "Methylprednisolone infusion in early severe ARDS: results of a randomized controlled trial.",
+     "year": 2007,
+     "verified": true,
+     "source": "proposed",
+     "role": "rct_early"
+    },
+    {
+     "pmid": "16625008",
+     "title": "Efficacy and safety of corticosteroids for persistent acute respiratory distress syndrome.",
+     "year": 2006,
+     "verified": true,
+     "source": "proposed",
+     "role": "rct_late (timing)"
+    },
+    {
+     "pmid": "32043986",
+     "title": "Dexamethasone treatment for the acute respiratory distress syndrome: a multicentre, randomised controlled trial.",
+     "year": 2020,
+     "verified": true,
+     "source": "proposed",
+     "role": "rct_dose (DEXA-ARDS)"
+    },
+    {
+     "pmid": "38240492",
+     "title": "2024 Focused Update: Guidelines on Use of Corticosteroids in Sepsis, Acute Respiratory Distress Syndrome, and Community-Acquired Pneumonia.",
+     "year": 2024,
+     "verified": true,
+     "source": "proposed",
+     "role": "guideline_focused_update"
+    }
+   ],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Best in-workspace candidate for the 'second steroid question' (client-originated Phase 5F/6G question) - OWNER MUST CONFIRM; the Sept UAT may have used a different second steroid question. Shares 2024 focused update with W15-01 (same family)."
+  },
+  {
+   "id": "W15-03",
+   "question": "In adults with septic shock receiving hydrocortisone, should it be tapered or stopped abruptly?",
+   "question_type_label": "therapy (discontinuation strategy)",
+   "engine_question_type": "treatment",
+   "family": "F01-corticosteroids-critical-illness",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "critical_care",
+   "origin": "proposed",
+   "reference_source": "proposed - needs physician adjudication",
+   "evidence_label": null,
+   "must_find": [],
+   "candidate_refs": [
+    {
+     "pmid": "35927963",
+     "title": "Abrupt Discontinuation Versus Taper of Hydrocortisone in Patients With Septic Shock.",
+     "year": 2023,
+     "verified": true,
+     "source": "proposed",
+     "role": "direct_cohort"
+    },
+    {
+     "pmid": "40658883",
+     "title": "Evaluation of Hydrocortisone Discontinuation Strategies in Septic Shock: A Retrospective Cohort Study.",
+     "year": 2025,
+     "verified": true,
+     "source": "proposed",
+     "role": "direct_cohort"
+    },
+    {
+     "pmid": "40671936",
+     "title": "Evaluation of Stress Dose Hydrocortisone Tapers in Septic Shock.",
+     "year": 2026,
+     "verified": true,
+     "source": "proposed",
+     "role": "direct_cohort"
+    },
+    {
+     "pmid": "28224109",
+     "title": "Timing, method and discontinuation of hydrocortisone administration for septic shock patients.",
+     "year": 2017,
+     "verified": true,
+     "source": "proposed",
+     "role": "review"
+    }
+   ],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Intent-contrast pair with W15-01 (report: 'should we give' vs 'how quickly to stop'). Taper papers must not outrank direct evidence in W15-01 and vice versa."
+  },
+  {
+   "id": "W15-04",
+   "question": "What is septic shock?",
+   "question_type_label": "background",
+   "engine_question_type": "background",
+   "family": "F02-sepsis-definitions-criteria",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "critical_care",
+   "origin": "litportal-backend/services/search_benchmark.py::septic_shock_background",
+   "reference_source": "repo_fixture (placeholder gold 71001/71002 = real unrelated 1977 PubMed records) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [
+    {
+     "pmid": "26903338",
+     "title": "The Third International Consensus Definitions for Sepsis and Septic Shock (Sepsis-3).",
+     "year": 2016,
+     "verified": true,
+     "source": "proposed",
+     "role": "definition_consensus"
+    },
+    {
+     "pmid": "26903336",
+     "title": "Developing a New Definition and Assessing New Clinical Criteria for Septic Shock: For the Third International Consensus Definitions for Sepsis and Septic Shock (Sepsis-3).",
+     "year": 2016,
+     "verified": true,
+     "source": "proposed",
+     "role": "definition_derivation"
+    },
+    {
+     "pmid": "41869847",
+     "title": "Surviving Sepsis Campaign: International Guidelines for Management of Sepsis and Septic Shock 2026.",
+     "year": 2026,
+     "verified": true,
+     "source": "proposed",
+     "role": "guideline_current"
+    }
+   ],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Tuned against in parser tests; dev only."
+  },
+  {
+   "id": "W15-05",
+   "question": "In adults with suspected infection, how well does qSOFA predict in-hospital mortality?",
+   "question_type_label": "prognosis",
+   "engine_question_type": "prognosis",
+   "family": "F02-sepsis-definitions-criteria",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "critical_care",
+   "origin": "proposed",
+   "reference_source": "proposed - needs physician adjudication",
+   "evidence_label": null,
+   "must_find": [],
+   "candidate_refs": [
+    {
+     "pmid": "26903335",
+     "title": "Assessment of Clinical Criteria for Sepsis: For the Third International Consensus Definitions for Sepsis and Septic Shock (Sepsis-3).",
+     "year": 2016,
+     "verified": true,
+     "source": "proposed",
+     "role": "derivation_validation"
+    },
+    {
+     "pmid": "29404582",
+     "title": "Prognostic Accuracy of the Quick Sequential Organ Failure Assessment for Mortality in Patients With Suspected Infection: A Systematic Review and Meta-analysis.",
+     "year": 2018,
+     "verified": true,
+     "source": "proposed",
+     "role": "meta_analysis"
+    }
+   ],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Shares Sepsis-3 package with W15-04 -> same family. Adjacent-PMID identity fixture: 26903335/6/7/8 are four different JAMA 2016 papers."
+  },
+  {
+   "id": "W15-06",
+   "question": "What is the dose of milrinone for patients with acute subarchnoid hemorrhage?",
+   "question_type_label": "dosing/pharmacology",
+   "engine_question_type": "harm",
+   "family": "F03-milrinone-SAH-DCI",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "neurocritical_care",
+   "origin": "litportal-backend/services/search_benchmark.py::milrinone_sah",
+   "reference_source": "repo_fixture (real PMIDs)",
+   "evidence_label": "fixture",
+   "must_find": [
+    {
+     "pmid": "33480639",
+     "title": "Treatment of Subarachnoid Hemorrhage-associated Delayed Cerebral Ischemia With Milrinone: A Review and Proposal.",
+     "year": 2021,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    },
+    {
+     "pmid": "22528278",
+     "title": "Milrinone and homeostasis to treat cerebral vasospasm associated with subarachnoid hemorrhage: the Montreal Neurological Hospital protocol.",
+     "year": 2012,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    },
+    {
+     "pmid": "27842615",
+     "title": "The Use of Milrinone in Patients with Delayed Cerebral Ischemia Following Subarachnoid Hemorrhage: A Systematic Review.",
+     "year": 2017,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    },
+    {
+     "pmid": "33470361",
+     "title": "Efficacy and safety of milrinone in the treatment of cerebral vasospasm after subarachnoid hemorrhage: a systematic review.",
+     "year": 2020,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    },
+    {
+     "pmid": "33682040",
+     "title": "Intravenous milrinone for treatment of delayed cerebral ischaemia following subarachnoid haemorrhage: a pooled systematic review.",
+     "year": 2021,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    },
+    {
+     "pmid": "18239182",
+     "title": "Milrinone for the treatment of cerebral vasospasm after aneurysmal subarachnoid hemorrhage.",
+     "year": 2008,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    },
+    {
+     "pmid": "11322432",
+     "title": "Milrinone for the treatment of cerebral vasospasm after subarachnoid hemorrhage: report of seven cases.",
+     "year": 2001,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    },
+    {
+     "pmid": "34478028",
+     "title": "Intravenous Milrinone for Cerebral Vasospasm in Subarachnoid Hemorrhage: The MILRISPASM Controlled Before-After Study.",
+     "year": 2021,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    },
+    {
+     "pmid": "32217799",
+     "title": "Milrinone for refractory cerebral vasospasm with delayed cerebral ischemia.",
+     "year": 2021,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "gold (repo)"
+    }
+   ],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Misspelling 'subarchnoid' is deliberate. Repo thresholds: >=3 gold in top10, >=6 in top20. Fixture corpus pairs these real PMIDs with SYNTHETIC titles/abstracts - never use fixture metadata as identity truth."
+  },
+  {
+   "id": "W15-07",
+   "question": "What is the difference between high hemoglobin target and low hemoglobin target in patients that are having acute myocardial infarction?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F04-transfusion-threshold-AMI",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "cardiology/critical_care",
+   "origin": "litportal-backend/services/search_benchmark.py::ami_hemoglobin_transfusion",
+   "reference_source": "repo_fixture (real PMIDs)",
+   "evidence_label": "fixture",
+   "must_find": [
+    {
+     "pmid": "37952133",
+     "title": "Restrictive or Liberal Transfusion Strategy in Myocardial Infarction and Anemia.",
+     "year": 2023,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "primary_gold (MINT)"
+    },
+    {
+     "pmid": "33560322",
+     "title": "Effect of a Restrictive vs Liberal Blood Transfusion Strategy on Major Cardiovascular Events Among Patients With Acute Myocardial Infarction and Anemia: The REALITY Randomized Clinical Trial.",
+     "year": 2021,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "primary_gold (REALITY)"
+    },
+    {
+     "pmid": "39714935",
+     "title": "Restrictive versus Liberal Transfusion in Myocardial Infarction - A Patient-Level Meta-Analysis.",
+     "year": 2025,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "primary_gold (IPD MA)"
+    },
+    {
+     "pmid": "39475958",
+     "title": "Restrictive versus Liberal Transfusion Strategies in Acute Myocardial Infarction and Anemia: A Meta-Analysis and Trial Sequential Analysis.",
+     "year": 2024,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "primary_gold (MA)"
+    },
+    {
+     "pmid": "15824203",
+     "title": "Association of hemoglobin levels with clinical outcomes in acute coronary syndromes.",
+     "year": 2005,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "secondary_gold"
+    },
+    {
+     "pmid": "38408702",
+     "title": "Restrictive vs Liberal Blood Transfusions for Patients With Acute Myocardial Infarction and Anemia by Heart Failure Status: An RCT Subgroup Analysis.",
+     "year": 2024,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "secondary_gold (REALITY subgroup - separate report)"
+    },
+    {
+     "pmid": "39221566",
+     "title": "Restrictive or Liberal Transfusion Strategy in Patients With Acute Myocardial Infarction and Anemia: 6-Month Mortality in the MINT Trial.",
+     "year": 2024,
+     "verified": true,
+     "source": "repo:search_benchmark.py",
+     "role": "secondary_gold (MINT 6-month letter - separate report)"
+    }
+   ],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Case-specific legacy logic exists (clinical_concept_translation.py 'transfusion_threshold_comparison'; MINT/REALITY acronyms in expected_query_features) -> dev only. Good main-trial vs subgroup/follow-up fixture. Adjacent-PMID hazard: 37952131 = SELECT (semaglutide), 37952133 = MINT."
+  },
+  {
+   "id": "W15-08",
+   "question": "What is the risk of pneumothorax after central line placement?",
+   "question_type_label": "harm (procedure complication risk)",
+   "engine_question_type": "harm",
+   "family": "F05-CVC-complications",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "critical_care",
+   "origin": "litportal-backend/services/r1a_gold_comparator_cases.py::r1a-case-D-cvc-pneumothorax",
+   "reference_source": "repo_r1a (physician-curated titles)",
+   "evidence_label": "fixture",
+   "must_find": [
+    {
+     "pmid": "25815301",
+     "title": "Pneumothorax as a complication of central venous catheter insertion.",
+     "year": 2015,
+     "verified": true,
+     "source": "repo:r1a_gold_comparator_cases.py",
+     "role": "gold_comparator (physician-curated M3.2)"
+    },
+    {
+     "pmid": "25455050",
+     "title": "Pneumothorax is a rare complication of thoracic central venous catheterization in community EDs.",
+     "year": 2015,
+     "verified": true,
+     "source": "repo:r1a_gold_comparator_cases.py",
+     "role": "gold_comparator (physician-curated M3.2)"
+    },
+    {
+     "pmid": "29802131",
+     "title": "Incidence and trends of central line associated pneumothorax using radiograph report text search versus administrative database codes.",
+     "year": 2018,
+     "verified": true,
+     "source": "repo:r1a_gold_comparator_cases.py",
+     "role": "gold_comparator (physician-curated M3.2)"
+    },
+    {
+     "pmid": "26557487",
+     "title": "Central line complications.",
+     "year": 2015,
+     "verified": true,
+     "source": "repo:r1a_gold_comparator_cases.py",
+     "role": "gold_comparator (physician-curated M3.2)"
+    },
+    {
+     "pmid": "16394682",
+     "title": "Pneumothorax in the intensive care unit: incidence, risk factors, and outcome.",
+     "year": 2006,
+     "verified": true,
+     "source": "repo:r1a_gold_comparator_cases.py",
+     "role": "gold_comparator (physician-curated M3.2)"
+    }
+   ],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Repo stores titles only; PMIDs resolved by author+title search. Curated CVC/pneumothorax expansion maps exist (r1b_query_expansion.py) and case was used in R1A/R1C tuning -> dev."
+  },
+  {
+   "id": "W15-09",
+   "question": "What is the mechanism of pruritus in cholestatic liver disease?",
+   "question_type_label": "mechanism",
+   "engine_question_type": "background",
+   "family": "F06-cholestatic-pruritus",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "hepatology",
+   "origin": "litportal-backend/services/r1a_gold_comparator_cases.py::r1a-case-A-cholestatic-pruritus",
+   "reference_source": "repo_r1a (DOI 10.1038/s41575-022-00687-7)",
+   "evidence_label": "fixture",
+   "must_find": [
+    {
+     "pmid": "36307649",
+     "title": "Mechanisms of pruritus in cholestasis: understanding and treating the itch.",
+     "year": 2023,
+     "verified": true,
+     "source": "repo:r1a_gold_comparator_cases.py",
+     "role": "gold_comparator"
+    }
+   ],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Non-treatment control. r1a Case C (amyloid, DOI->31202759, comparator not amyloid-specific) and Case B (no gold) omitted."
+  },
+  {
+   "id": "W15-10",
+   "question": "impact of GLP-1 agonists on incidence of acute coronary syndrome",
+   "question_type_label": "therapy/harm (outcome incidence)",
+   "engine_question_type": "harm",
+   "family": "F07-GLP1RA-cardiometabolic",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "cardiology/endocrinology",
+   "origin": "memory record project_litportal_relevance_scorer_rescorer (July 2026 session 604d794d)",
+   "reference_source": "historical session + proposed",
+   "evidence_label": "historical",
+   "must_find": [],
+   "candidate_refs": [
+    {
+     "pmid": "27295427",
+     "title": "Liraglutide and Cardiovascular Outcomes in Type 2 Diabetes.",
+     "year": 2016,
+     "verified": true,
+     "source": "proposed",
+     "role": "cvot (LEADER)"
+    },
+    {
+     "pmid": "27633186",
+     "title": "Semaglutide and Cardiovascular Outcomes in Patients with Type 2 Diabetes.",
+     "year": 2016,
+     "verified": true,
+     "source": "proposed",
+     "role": "cvot (SUSTAIN-6)"
+    },
+    {
+     "pmid": "37952131",
+     "title": "Semaglutide and Cardiovascular Outcomes in Obesity without Diabetes.",
+     "year": 2023,
+     "verified": true,
+     "source": "proposed",
+     "role": "cvot (SELECT)"
+    },
+    {
+     "pmid": "34425083",
+     "title": "Cardiovascular, mortality, and kidney outcomes with GLP-1 receptor agonists in patients with type 2 diabetes: a systematic review and meta-analysis of randomised trials.",
+     "year": 2021,
+     "verified": true,
+     "source": "proposed",
+     "role": "meta_analysis"
+    }
+   ],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Historical: 186 retrieved/183 excluded before July fixes; 4 vs 11 vs old backend. ACS is a MACE component -> CVOTs partly indirect; adjudicate. GLP-1 hard-codes exist in picott_ranker -> dev."
+  },
+  {
+   "id": "W15-11",
+   "question": "What is the recommended age to get varicella vaccination? What is its benefit?",
+   "question_type_label": "prevention (schedule + benefit, multi-intent)",
+   "engine_question_type": "prevention",
+   "family": "F08-varicella-vaccination",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "preventive_medicine",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::varicella_schedule_and_benefit",
+   "reference_source": "repo_fixture (provisional) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [
+    {
+     "pmid": "17585291",
+     "title": "Prevention of varicella: recommendations of the Advisory Committee on Immunization Practices (ACIP).",
+     "year": 2007,
+     "verified": true,
+     "source": "proposed",
+     "role": "guideline (ACIP 2007)"
+    }
+   ],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Multi-intent handling; newer ACIP/AAP schedules need owner-chosen source scope (not all PubMed-indexed)."
+  },
+  {
+   "id": "W15-12",
+   "question": "what is the prognosis of colon cancer?",
+   "question_type_label": "prognosis",
+   "engine_question_type": "prognosis",
+   "family": "F09-colorectal-cancer-prognosis",
+   "split": "dev",
+   "split_note": "dev (zero-result regression)",
+   "specialty": "oncology",
+   "origin": "memory record project_litportal_search_deadend_family (July 2026)",
+   "reference_source": "historical",
+   "evidence_label": "historical",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Returned 'No results' before July fixes (fused anchor). Physician to supply references; primarily a W2.1 zero-result/short-question recovery case."
+  },
+  {
+   "id": "W15-13",
+   "question": "What are the side effects?",
+   "question_type_label": "underspecified (clarification required)",
+   "engine_question_type": "other",
+   "family": "F10-underspecified",
+   "split": "dev",
+   "split_note": "dev",
+   "specialty": "none",
+   "origin": "litportal-backend/scripts/phase6g_fresh_query_validation.py Q6",
+   "reference_source": "repo_fixture",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "notes": "Expected: no retrieval before a confirmed clinical subject (W1.4); abstention case, excluded from recall denominators by pre-registration."
+  },
+  {
+   "id": "W15-14",
+   "question": "In septic shock, does norepinephrine reduce mortality compared with dopamine?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F11-vasopressor-choice",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::vasopressor_norepi_vs_dopamine",
+   "reference_source": "repo_fixture (provisional) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-15",
+   "question": "In adult sepsis, do balanced crystalloids reduce mortality compared with normal saline?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F12-resuscitation-fluids",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::septic_shock_balanced_vs_saline",
+   "reference_source": "repo_fixture (provisional) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-16",
+   "question": "In critically ill adults with sepsis, does hydroxyethyl starch increase death or kidney injury compared with crystalloids?",
+   "question_type_label": "harm",
+   "engine_question_type": "harm",
+   "family": "F12-resuscitation-fluids",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "proposed",
+   "reference_source": "proposed - needs physician adjudication",
+   "evidence_label": null,
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-17",
+   "question": "In adults with severe acute respiratory distress syndrome, does prone positioning reduce mortality?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F13-ARDS-prone",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::ards_prone_positioning",
+   "reference_source": "repo_fixture (provisional) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-18",
+   "question": "In adults with ARDS, how does Berlin-definition severity relate to mortality?",
+   "question_type_label": "prognosis",
+   "engine_question_type": "prognosis",
+   "family": "F14-ARDS-severity-prognosis",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "proposed",
+   "reference_source": "proposed - needs physician adjudication",
+   "evidence_label": null,
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-19",
+   "question": "After out-of-hospital cardiac arrest, does targeted temperature management at 32-34 C improve survival or neurologic outcome versus normothermia?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F15-post-arrest-temperature",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "proposed",
+   "reference_source": "proposed - needs physician adjudication",
+   "evidence_label": null,
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-20",
+   "question": "In invasively ventilated ICU adults, does stress ulcer prophylaxis with a proton pump inhibitor prevent clinically important upper GI bleeding?",
+   "question_type_label": "prevention",
+   "engine_question_type": "prevention",
+   "family": "F16-ICU-stress-ulcer-prophylaxis",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "proposed",
+   "reference_source": "proposed - needs physician adjudication",
+   "evidence_label": null,
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-21",
+   "question": "In critically ill adults with suspected infection, how accurate is procalcitonin for diagnosing sepsis?",
+   "question_type_label": "diagnosis",
+   "engine_question_type": "diagnosis",
+   "family": "F17-sepsis-biomarker-diagnosis",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "proposed",
+   "reference_source": "proposed - needs physician adjudication",
+   "evidence_label": null,
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-22",
+   "question": "What is the diagnostic accuracy of D-dimer for pulmonary embolism in low-risk adults?",
+   "question_type_label": "diagnosis",
+   "engine_question_type": "diagnosis",
+   "family": "F18-PE-diagnosis",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "emergency/critical_care",
+   "origin": "litportal-backend/services/search_benchmark.py::ddimer_pe_lowrisk",
+   "reference_source": "repo_fixture (placeholder gold 91001/91002 = real unrelated 1979 Lancet records) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-23",
+   "question": "How accurate is the CAM-ICU for detecting delirium in mechanically ventilated ICU patients?",
+   "question_type_label": "diagnosis/screening test accuracy",
+   "engine_question_type": "diagnosis",
+   "family": "F19-ICU-delirium-assessment",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "critical_care",
+   "origin": "proposed",
+   "reference_source": "proposed - needs physician adjudication",
+   "evidence_label": null,
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-24",
+   "question": "In patients undergoing coronary angiography, does intravenous saline prevent contrast-associated acute kidney injury?",
+   "question_type_label": "prevention",
+   "engine_question_type": "prevention",
+   "family": "F20-contrast-AKI-prevention",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "nephrology/cardiology",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::contrast_aki_prevention",
+   "reference_source": "repo_fixture (provisional) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-25",
+   "question": "What are the guidelines for colorectal cancer screening in average-risk adults?",
+   "question_type_label": "screening/guideline",
+   "engine_question_type": "screening",
+   "family": "F21-CRC-screening",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "preventive_medicine",
+   "origin": "litportal-backend/services/search_benchmark.py::colorectal_screening_guideline",
+   "reference_source": "repo_fixture (placeholder gold 81001/81002 = real unrelated 1978 records) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-26",
+   "question": "What is the first-line pharmacologic treatment for adults with convulsive status epilepticus?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F22-status-epilepticus",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "neurocritical_care",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::status_epilepticus_first_line",
+   "reference_source": "repo_fixture (provisional) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-27",
+   "question": "In ischemic stroke, does mechanical thrombectomy improve outcomes beyond 6 hours from onset?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F23-stroke-thrombectomy",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "neurology",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::stroke_thrombectomy_window",
+   "reference_source": "repo_fixture (provisional) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-28",
+   "question": "Do NSAIDs cause acute kidney injury in older adults with chronic kidney disease?",
+   "question_type_label": "harm",
+   "engine_question_type": "harm",
+   "family": "F24-NSAID-AKI",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "nephrology",
+   "origin": "litportal-backend/services/search_benchmark.py::nsaid_aki_ckd_older",
+   "reference_source": "repo_fixture (placeholder gold 61001/61002 = real unrelated 1975 records)",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  },
+  {
+   "id": "W15-29",
+   "question": "What is the evidence for SGLT2 inhibitors in heart failure with preserved ejection fraction?",
+   "question_type_label": "therapy",
+   "engine_question_type": "treatment",
+   "family": "F25-HFpEF-SGLT2",
+   "split": "held_out",
+   "split_note": "held_out_candidate",
+   "specialty": "cardiology",
+   "origin": "litportal-backend/services/search_benchmark_phase5c.py::hfpef_sglt2",
+   "reference_source": "repo_fixture (provisional) + proposed",
+   "evidence_label": "fixture",
+   "must_find": [],
+   "candidate_refs": [],
+   "hard_negatives_and_fixtures": [],
+   "references_held_privately": true,
+   "notes": "References withheld from the repository to keep this case held-out; see the physician hand-off file."
+  }
+ ]
+}
