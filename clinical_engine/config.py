@@ -59,5 +59,14 @@ class EngineSettings:
     # "Answer for me" delegated selection policy (Week-1 bridge to the legacy results).
     DELEGATED_MAX_ITEMS: int = _int("CLINICAL_ENGINE_DELEGATED_MAX_ITEMS", 8)
 
+    # Search-terms review (second approval step): MeSH lookup + term classification.
+    MESH_TIMEOUT_S: float = _float("CLINICAL_ENGINE_MESH_TIMEOUT_S", 12.0)
+    # Model for classifying search terms (blank = the interpreter model). A stronger
+    # model gives cleaner equivalent/narrower/related labels for ~1k tokens per question.
+    TERMS_MODEL: str = os.environ.get("CLINICAL_ENGINE_TERMS_MODEL", "")
+    TERMS_MAX_TOKENS: int = _int("CLINICAL_ENGINE_TERMS_MAX_TOKENS", 1400)
+    TERMS_TIMEOUT_S: float = _float("CLINICAL_ENGINE_TERMS_TIMEOUT_S", 25.0)
+    MAX_TERM_REVISIONS: int = _int("CLINICAL_ENGINE_MAX_TERM_REVISIONS", 60)
+
 
 settings = EngineSettings

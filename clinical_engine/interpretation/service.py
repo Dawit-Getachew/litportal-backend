@@ -23,9 +23,9 @@ from clinical_engine.interpretation.present import EngineInputError, build_summa
 # HIPAA treats ages over 89 as identifying; the shared guard does not flag them.
 _AGE_OVER_89 = re.compile(r"\b(?:9\d|1[0-2]\d)[- ]?(?:years?|yrs?|yo)[- ]?(?:old)?\b|\baged? (?:9\d|1[0-2]\d)\b", re.I)
 _CORE_ROLES = ("condition", "population", "intervention", "exposure", "index_test", "comparator",
-               "reference_standard", "outcome", "prognostic_factor")
+               "reference_standard", "outcome", "prognostic_factor", "presentation", "phenomenon", "concept")
 _RULE_ONLY_ROLES = ("setting", "time_frame", "publication_window")
-_OUTCOME_IS_THE_CONDITION = {"prevention", "etiology_risk", "screening", "epidemiology", "harm"}
+_OUTCOME_IS_THE_CONDITION = {"prevention", "etiology_risk", "screening", "epidemiology", "harm", "complications"}
 
 
 @dataclass
@@ -75,7 +75,9 @@ def merge(reading: rules.RulesReading, model: Optional[ModelReading]) -> tuple[s
         ambiguities.append("No specific intervention named; reading this as a management question.")
         qtype = "clinical_management"
 
-    if qtype in ("diagnosis", "screening") and not any(e.active and e.role == "index_test" for e in model.elements):
+    if qtype in ("diagnosis", "screening", "monitoring", "diagnostic_workup") and not any(
+        e.active and e.role == "index_test" for e in model.elements
+    ):
         for e in model.elements:
             if e.role == "intervention" and e.active:
                 e.role = "index_test"  # the model named the test as an "intervention"
@@ -175,7 +177,9 @@ async def interpret(
         question_text=text,
         question_type=qtype,  # type: ignore[arg-type]
         question_type_source="ai_inferred",
-        framework=framework_for(qtype),  # type: ignore[arg-type]
+        framework=framework_for(  # type: ignore[arg-type]
+            qtype, has_comparator=any(e.role == "comparator" and e.active and not e.negated for e in elements),
+        ),
         elements=elements,
         ambiguities=ambiguities[:4],
     )

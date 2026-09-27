@@ -43,7 +43,8 @@ class ModelCallResult:
 
 
 class ModelGateway:
-    def __init__(self, transport: Optional[httpx.AsyncBaseTransport] = None) -> None:
+    def __init__(self, transport: Optional[httpx.AsyncBaseTransport] = None, *,
+                 model: Optional[str] = None) -> None:
         self.provider = os.environ.get("LLM_PROVIDER", "none").strip().lower()
         self._transport = transport
         if self.provider == "openai":
@@ -55,7 +56,7 @@ class ModelGateway:
         else:
             self._key = ""
             default_model = ""
-        self.model = (settings.INTERPRETER_MODEL or default_model) or None
+        self.model = (model or settings.INTERPRETER_MODEL or default_model) or None
 
     def is_configured(self) -> bool:
         return self.provider in _ENDPOINTS and bool(self._key) and bool(self.model)

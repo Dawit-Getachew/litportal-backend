@@ -7,7 +7,7 @@ through the adapter named on the run until the W2 lanes are built.
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from clinical_engine.config import settings
 from clinical_engine.contracts.question import ClinicalQuestionMap
@@ -26,12 +26,20 @@ _LANE_DESIGNS: dict[str, list[str]] = {
     "prognosis": ["Cohort Study"],
     "epidemiology": ["Cross-Sectional Study", "Cohort Study", "Registry"],
     "clinical_management": ["Randomized Controlled Trial", "Cohort Study"],
+    "diagnostic_workup": ["Diagnostic accuracy study", "Cohort Study"],
+    "prognostic_factor": ["Cohort Study"],
+    "prediction_model": ["Validation Study", "Cohort Study"],
+    "qualitative": ["Qualitative Research"],
+    "evidence_map": [],
+    "monitoring": ["Cohort Study", "Randomized Controlled Trial"],
+    "complications": ["Cohort Study", "Case-Control Study"],
+    "health_services": ["Randomized Controlled Trial", "Controlled Before-After Study"],
     "background": [],
     "other": [],
 }
 _AGGREGATED_TYPES = ["Practice Guideline", "Guideline", "Systematic Review", "Meta-Analysis"]
-_BLOCK_ROLES = ("condition", "population", "intervention", "exposure", "index_test", "comparator",
-                "outcome", "prognostic_factor")
+_BLOCK_ROLES = ("condition", "presentation", "population", "intervention", "exposure", "index_test",
+                "prognostic_factor", "phenomenon", "concept", "comparator", "outcome")
 
 
 def _term(value: str) -> str:
@@ -63,7 +71,8 @@ def _sketch(blocks: list[dict[str, Any]], excluded: list[str], filter_types: lis
     return query
 
 
-def search_plan(cqm: ClinicalQuestionMap, version: int) -> dict[str, Any]:
+def search_plan(cqm: ClinicalQuestionMap, version: int,
+                concept_plan: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     blocks = concept_blocks(cqm)
     excluded = [e.value for e in cqm.elements if e.negated and e.role != "age_group"]
     excluded += [{"child": "child", "pediatric": "pediatric", "adult": "adult",
@@ -98,11 +107,29 @@ def search_plan(cqm: ClinicalQuestionMap, version: int) -> dict[str, Any]:
         "not_applied_suggestions": [{"role": e.role, "value": e.value} for e in cqm.suggestions()],
         "lanes": lanes,
         "limits": {"per_lane_candidates": 50, "max_total_candidates": 150},
+        "approved_search": _approved_search(concept_plan),
         "notes": [
             "Week 1: lanes are planned for inspection only; retrieval runs through the run's "
             "retrieval adapter until the W2 lanes ship.",
-            "Query sketches are not validated MeSH queries (PRESS checks arrive with W2.1).",
+            "With approved search terms, the retrieval adapter searches exactly those terms "
+            "(see approved_search); otherwise the existing pipeline reads the question itself.",
         ],
+    }
+
+
+def _approved_search(concept_plan: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    if not concept_plan:
+        return None
+    from services.engine_concept_plan import full_query, validate_plan
+
+    plan = validate_plan(concept_plan)
+    return {
+        "terms_version": concept_plan.get("terms_version"),
+        "terms_hash": concept_plan.get("terms_hash"),
+        "use_synonyms": concept_plan.get("use_synonyms"),
+        "filters": concept_plan.get("filters"),
+        "concepts": concept_plan.get("concepts"),
+        "queries": {s: full_query(plan, s) for s in ("pubmed", "europe_pmc")} if plan else {},
     }
 
 

@@ -4,6 +4,7 @@ instead of silently driving a search."""
 from __future__ import annotations
 
 from clinical_engine.contracts.question import ClinicalQuestionMap, IntentConflict
+from clinical_engine.frameworks import TYPE_LABELS
 
 # What a question type needs before evidence can be searched for it.
 REQUIRED_ROLES: dict[str, list[tuple[str, ...]]] = {
@@ -17,16 +18,26 @@ REQUIRED_ROLES: dict[str, list[tuple[str, ...]]] = {
     "prognosis": [("condition", "population")],
     "epidemiology": [("condition",)],
     "clinical_management": [("condition",)],
-    "background": [("condition", "intervention", "exposure", "index_test", "population")],
+    "background": [("condition", "intervention", "exposure", "index_test", "population", "concept")],
+    # Clinical Question Map V2 intents
+    "diagnostic_workup": [("presentation", "condition", "population")],
+    "prognostic_factor": [("prognostic_factor", "exposure"), ("condition", "population", "outcome")],
+    "prediction_model": [("prognostic_factor", "index_test", "outcome")],
+    "qualitative": [("phenomenon", "intervention", "exposure", "condition", "population")],
+    "evidence_map": [("concept", "condition", "intervention", "exposure", "population")],
+    "monitoring": [("condition", "population", "intervention", "index_test")],
+    "complications": [("intervention", "exposure", "condition")],
+    "health_services": [("intervention", "exposure", "setting", "perspective", "population", "condition")],
     "other": [],
 }
 _ROLE_LABELS = {
     "intervention": "the treatment or intervention", "condition": "the condition or patient group",
     "population": "the patient group", "outcome": "the outcome", "exposure": "the exposure",
     "index_test": "the test being evaluated", "prognostic_factor": "the prognostic factor",
+    "presentation": "the presentation", "phenomenon": "the phenomenon of interest", "concept": "the concept",
 }
 # Types where the condition may legitimately also be the outcome of interest.
-_CONDITION_CAN_BE_OUTCOME = {"prevention", "harm", "etiology_risk", "screening", "epidemiology"}
+_CONDITION_CAN_BE_OUTCOME = {"prevention", "harm", "etiology_risk", "screening", "epidemiology", "complications"}
 _INCOMPATIBLE_AGES = [
     ({"neonate", "infant", "child", "pediatric", "adolescent"}, {"adult", "older_adult"}),
 ]
@@ -46,8 +57,8 @@ def check(cqm: ClinicalQuestionMap) -> tuple[list[IntentConflict], list[str]]:
             label = _ROLE_LABELS.get(alternatives[0], alternatives[0])
             conflicts.append(IntentConflict(
                 code="missing_core_element", severity="blocking", roles=list(alternatives),
-                message=f"This reads as a {cqm.question_type.replace('_', ' ')} question but "
-                        f"{label} is missing. Add it, or change the question type.",
+                message=f"This reads as a {TYPE_LABELS.get(cqm.question_type, cqm.question_type).lower()} "
+                        f"question but {label} is missing. Add it, or change the question type.",
             ))
 
     interventions = {_norm(e.value): e for e in active if e.role in ("intervention", "exposure", "index_test")}

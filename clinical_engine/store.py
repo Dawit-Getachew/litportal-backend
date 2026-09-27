@@ -24,7 +24,8 @@ TASKS = "engine_tasks"
 TRACES = "engine_traces"
 EVIDENCE_SETS = "engine_evidence_sets"
 RATE = "engine_rate_counters"
-ALL_COLLECTIONS = (QUESTIONS, VERSIONS, RUNS, TASKS, TRACES, EVIDENCE_SETS, RATE)
+FEEDBACK = "engine_feedback"
+ALL_COLLECTIONS = (QUESTIONS, VERSIONS, RUNS, TASKS, TRACES, EVIDENCE_SETS, RATE, FEEDBACK)
 
 # Identifies this process as a lease holder (multi-replica safe).
 WORKER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
@@ -60,6 +61,7 @@ async def ensure_indexes() -> None:
         (EVIDENCE_SETS, [("run_id", ASCENDING)], {"name": "ees_run"}),
         (RATE, [("key", ASCENDING)], {"unique": True, "name": "erc_key"}),
         (RATE, [("expires_at", ASCENDING)], {"expireAfterSeconds": 0, "name": "erc_ttl"}),
+        (FEEDBACK, [("question_id", ASCENDING), ("created_at", DESCENDING)], {"name": "efb_q_created"}),
     ]
     for coll, keys, opts in specs:
         try:
@@ -117,15 +119,43 @@ async def supersede_versions(question_id: str, keep_version: int) -> None:
     )
 
 
-async def record_approval(version_id: str, approval: dict, delegation: Optional[dict]) -> bool:
-    """Atomic: only a current, not-yet-approved version can be approved once."""
+async def record_approval(version_id: str, approval: dict, delegation: Optional[dict],
+                          *, search_terms_version: Optional[int] = None) -> bool:
+    """Atomic: only a current, not-yet-approved version can be approved once —
+    and, when the search terms were reviewed, only while they are still at the
+    version the clinician saw."""
     set_fields: dict[str, Any] = {"approval": approval}
     if delegation is not None:
         set_fields["delegation"] = delegation
+    flt: dict[str, Any] = {"id": version_id, "status": "current", "approval": None}
+    if search_terms_version is not None:
+        flt["search_terms.version"] = search_terms_version
+    res = await _db()[VERSIONS].update_one(flt, {"$set": set_fields})
+    return res.modified_count == 1
+
+
+async def record_interpretation_approval(version_id: str, approval: dict, search_terms: dict) -> bool:
+    """Step 1, atomic: a current, unapproved version gets its interpretation
+    approval and first search terms exactly once."""
     res = await _db()[VERSIONS].update_one(
-        {"id": version_id, "status": "current", "approval": None}, {"$set": set_fields},
+        {"id": version_id, "status": "current", "approval": None, "interpretation_approval": None},
+        {"$set": {"interpretation_approval": approval, "search_terms": search_terms}},
     )
     return res.modified_count == 1
+
+
+async def save_search_terms(version_id: str, search_terms: dict, *, expect_terms_version: int) -> bool:
+    """Conditional write: the terms are replaced only if nobody edited them since
+    the clinician's view (and the search has not been started)."""
+    res = await _db()[VERSIONS].update_one(
+        {"id": version_id, "status": "current", "approval": None, "search_terms.version": expect_terms_version},
+        {"$set": {"search_terms": search_terms}},
+    )
+    return res.modified_count == 1
+
+
+async def insert_feedback(doc: dict) -> None:
+    await _db()[FEEDBACK].insert_one(dict(doc))
 
 
 async def count_interpretation(user_id: str) -> int:

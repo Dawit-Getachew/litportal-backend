@@ -75,6 +75,7 @@ from services.clinical_signal_router import clinical_signal_router as _cqm_signa
 from services.retrieval_quality_evaluator import retrieval_quality_evaluator
 from services.safety_filter import safety_filter
 from services.scholar_like_expansion import expansion_mode, scholar_like_expansion
+from services import engine_concept_plan
 from services.search_planning import search_planning
 from services import recall_supplement
 from services import anchor_dedup
@@ -1211,11 +1212,15 @@ async def run_pipeline(
     # in routers/search_sessions.py::create_session. This survives the
     # final flush below because we re-emit it alongside the other
     # stage timings.
+    # Search plan the clinician approved in the question-review flow (None =
+    # the pipeline reads the question itself, as before).
+    engine_plan: Optional[dict[str, Any]] = None
     try:
         _seed_doc = await get_db()[Collections.SEARCH_SESSIONS].find_one(
             {"id": session_id},
-            {"session_diagnostics_json.latency_by_stage_json": 1, "_id": 0},
+            {"session_diagnostics_json.latency_by_stage_json": 1, "engine_concept_plan": 1, "_id": 0},
         )
+        engine_plan = engine_concept_plan.validate_plan((_seed_doc or {}).get("engine_concept_plan"))
         _seed_phi = (
             ((_seed_doc or {})
              .get("session_diagnostics_json") or {})
@@ -1256,7 +1261,7 @@ async def run_pipeline(
             logger.exception("phase6f2 anchor pre-flight failed (non-fatal)")
             is_generic_only = False
 
-        if is_generic_only:
+        if is_generic_only and engine_plan is None:
             from services.primary_clinical_anchor import (
                 CLARIFICATION_MESSAGE,
                 _detect_generic_modifiers,
@@ -1964,6 +1969,11 @@ async def run_pipeline(
             picott_payload["must_have_concepts"] = mh_list
         # Drop the overrides key before persistence — it's a transport
         # field, not a schema-stable session-document field.
+        # Approved search terms replace the parser's concepts and anchors: the
+        # clinician reviewed exactly what is searched and how it is ranked.
+        if engine_plan is not None:
+            engine_concept_plan.apply_to_picott(picott_payload, anchors_out, engine_plan)
+            parsed["picott_json"] = picott_payload
         anchors_out_persist = {
             k: v for k, v in anchors_out.items() if k != "picott_overrides"
         }
@@ -3214,7 +3224,7 @@ async def run_pipeline(
         #      builder already expands; AND-across-concept gating preserves
         #      precision. Fully gated by AI_QUERY_EXPANSION_ENABLED. ----
         if (picott_payload and picott_payload.get("must_have_concepts")
-                and ai_query_expansion.is_enabled()):
+                and engine_plan is None and ai_query_expansion.is_enabled()):
             try:
                 _expand_roles = {"condition", "population", "intervention", "exposure"}
                 _expanded = 0
@@ -3246,7 +3256,17 @@ async def run_pipeline(
             except Exception:  # noqa: BLE001
                 logger.exception("ai_query_expansion failed (non-fatal)")
 
-        if picott_payload and picott_payload.get("must_have_concepts"):
+        if engine_plan is not None:
+            with diag.stage("boolean_query_compilation"):
+                try:
+                    for rec in engine_concept_plan.build_queries(engine_plan, list(sources)):
+                        cb_queries.append(rec)
+                        phase5d_metrics["phase5d_queries_emitted_by_source"][rec["source"]] = (
+                            phase5d_metrics["phase5d_queries_emitted_by_source"].get(rec["source"], 0) + 1
+                        )
+                except Exception:  # noqa: BLE001
+                    logger.exception("engine concept plan query build failed (non-fatal)")
+        elif picott_payload and picott_payload.get("must_have_concepts"):
             with diag.stage("boolean_query_compilation"):
                 try:
                     for cbq in concept_block_query_builder.build(
@@ -3434,7 +3454,9 @@ async def run_pipeline(
                 ),
                 "phase": "M4.1.1",
             }
-        if m3_2_decision.get("applied") and m3_2_cb_records:
+        if engine_plan is not None:
+            pass  # approved terms are final: no semantic-repair / M4 query rewrites
+        elif m3_2_decision.get("applied") and m3_2_cb_records:
             logger.info(
                 "phaseM3_2_active_apply session_id=%s shape=%s "
                 "n_m_repaired_queries=%d n_a_arm_queries=%d "
@@ -3626,7 +3648,7 @@ async def run_pipeline(
 
         fallback_sources: list[str] = [
             s for s, reasons in fallback_reasons_by_source.items() if reasons
-        ]
+        ] if engine_plan is None else []  # the fallback planner would add unapproved terms
 
         # ---- Step 5 — Legacy planner runs ONLY for fallback sources ----
         legacy_plans: list = []
@@ -3748,7 +3770,7 @@ async def run_pipeline(
         # Default-ON (no deployment env needed); THIN_POOL_SUPPLEMENT_ENABLED=false
         # disables it. Non-fatal: any failure leaves the original pool intact.
         _thin_enabled, _thin_min = recall_supplement.thin_pool_settings()
-        if recall_supplement.should_supplement(
+        if engine_plan is None and recall_supplement.should_supplement(
             len(unique_articles), enabled=_thin_enabled, min_pool=_thin_min
         ):
             _broaden_sources = recall_supplement.sources_to_broaden(sources, fallback_sources)

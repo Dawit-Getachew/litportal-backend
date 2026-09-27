@@ -253,6 +253,23 @@ async def create_session(
     body: SearchSessionCreate,
     current_user: dict = Depends(get_current_user),
 ):
+    return await start_session(body, current_user["id"])
+
+
+async def start_session(
+    body: SearchSessionCreate,
+    user_id: str,
+    *,
+    extras: Optional[dict] = None,
+):
+    """Create a search session and schedule its pipeline (the POST / route).
+
+    ``extras`` are internal fields stored on a clean (non-PHI) session before
+    the pipeline starts — the clinical engine uses it to hand over the search
+    plan the clinician approved (``engine_concept_plan``). Not exposed on the
+    route, so the API contract is unchanged.
+    """
+    current_user = {"id": user_id}
     db = get_db()
     now = datetime.now(timezone.utc)
     # Phase L1 — normalize explicit preferences (if any) at creation.
@@ -351,6 +368,8 @@ async def create_session(
     doc["session_diagnostics_json"] = {
         "latency_by_stage_json": {"phi_guard": _phi_ms},
     }
+    for key, value in (extras or {}).items():
+        doc.setdefault(key, value)
     await db[Collections.SEARCH_SESSIONS].insert_one(doc)
     await audit_service.log(
         "search_session_created",

@@ -15,7 +15,9 @@ from clinical_engine import ENGINE_VERSION, questions
 from clinical_engine.config import settings
 from clinical_engine.contracts.question import AGE_GROUPS
 from clinical_engine.gateway import ModelGateway
-from clinical_engine.interpretation.present import AGE_LABELS, TYPE_LABELS, ChipEdit, EngineInputError
+from clinical_engine.frameworks import type_options
+from clinical_engine.interpretation.present import AGE_LABELS, ChipEdit, EngineInputError
+from clinical_engine.search_terms.contracts import TermEdit
 from clinical_engine.questions import DECLINE_REASONS, EngineConflict, EngineNotFound
 from core.security import get_current_user
 
@@ -55,6 +57,27 @@ class ConfirmQuestionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     version: int = Field(ge=1)
     mode: Literal["review_papers", "answer_for_me"]
+    # Step 2 of the review: the search-terms version the clinician approved.
+    search_terms_version: Optional[int] = Field(default=None, ge=1)
+
+
+class ApproveInterpretationBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+
+
+class ReviseSearchTermsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int = Field(ge=1)
+    base_terms_version: int = Field(ge=1)
+    edits: list[TermEdit] = Field(min_length=1, max_length=40)
+
+
+class FeedbackBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    helpful: bool
+    comment: Optional[str] = Field(default=None, max_length=2000)
+    run_id: Optional[str] = Field(default=None, max_length=64)
 
 
 class DeclineQuestionBody(BaseModel):
@@ -70,7 +93,9 @@ async def capabilities() -> dict[str, Any]:
         "modes": ["review_papers", "answer_for_me"],
         "retrieval_adapter": settings.RETRIEVAL_ADAPTER if settings.ENABLED else None,
         "model_configured": ModelGateway().is_configured() if settings.ENABLED else False,
-        "question_types": [{"value": k, "label": v} for k, v in TYPE_LABELS.items()],
+        "question_types": type_options(),
+        "review_steps": ["interpretation", "search_terms"],
+        "publication_year_options": [0, 5, 10],
         "age_groups": [{"value": a, "label": AGE_LABELS[a]} for a in AGE_GROUPS],
         "decline_reasons": list(DECLINE_REASONS),
         "limits": {"max_question_chars": settings.MAX_QUESTION_CHARS,
@@ -104,7 +129,38 @@ async def revise_question(question_id: str, body: ReviseQuestionBody,
 @router.post("/questions/{question_id}/confirm", dependencies=[Depends(_enabled)])
 async def confirm_question(question_id: str, body: ConfirmQuestionBody,
                            current_user: dict = Depends(get_current_user)):
-    return await _call(questions.confirm_question(current_user, question_id, version=body.version, mode=body.mode))
+    return await _call(questions.confirm_question(current_user, question_id, version=body.version, mode=body.mode,
+                                                  search_terms_version=body.search_terms_version))
+
+
+@router.post("/questions/{question_id}/approve-interpretation", dependencies=[Depends(_enabled)])
+async def approve_interpretation(question_id: str, body: ApproveInterpretationBody,
+                                 current_user: dict = Depends(get_current_user)):
+    return await _call(questions.approve_interpretation(current_user, question_id, version=body.version))
+
+
+@router.post("/questions/{question_id}/search-terms/revise", dependencies=[Depends(_enabled)])
+async def revise_search_terms(question_id: str, body: ReviseSearchTermsBody,
+                              current_user: dict = Depends(get_current_user)):
+    return await _call(questions.revise_search_terms(
+        current_user, question_id, version=body.version, base_terms_version=body.base_terms_version,
+        edits=body.edits,
+    ))
+
+
+@router.get("/questions/{question_id}/search-terms/counts", dependencies=[Depends(_enabled)])
+async def search_terms_counts(question_id: str, version: int = Query(..., ge=1),
+                              terms_version: int = Query(..., ge=1),
+                              current_user: dict = Depends(get_current_user)):
+    return await _call(questions.search_terms_counts(current_user, question_id, version=version,
+                                                     terms_version=terms_version))
+
+
+@router.post("/questions/{question_id}/feedback", status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(_enabled)])
+async def submit_feedback(question_id: str, body: FeedbackBody, current_user: dict = Depends(get_current_user)):
+    return await _call(questions.submit_feedback(current_user, question_id, helpful=body.helpful,
+                                                 comment=body.comment, run_id=body.run_id))
 
 
 @router.post("/questions/{question_id}/decline", dependencies=[Depends(_enabled)])

@@ -10,8 +10,10 @@ from clinical_engine.contracts.question import (
     AGE_GROUPS,
     ClinicalQuestionMap,
     QuestionElement,
-    framework_for,
+    map_framework,
 )
+from clinical_engine.frameworks import TYPE_LABELS, type_options
+from clinical_engine.frameworks import role_label as _framework_role_label
 from clinical_engine.interpretation.model_reading import QUESTION_TYPES, ROLES
 from clinical_engine.interpretation.rules import _SETTINGS  # shared setting lexicon
 
@@ -25,12 +27,6 @@ class EngineInputError(ValueError):
         self.message = message
 
 
-TYPE_LABELS = {
-    "treatment": "Treatment effect", "prevention": "Prevention", "harm": "Harms / adverse effects",
-    "etiology_risk": "Risk / cause", "diagnosis": "Diagnostic accuracy", "screening": "Screening",
-    "prognosis": "Prognosis", "epidemiology": "How common (incidence / prevalence)",
-    "clinical_management": "Clinical management", "background": "Background", "other": "Other",
-}
 AGE_LABELS = {
     "neonate": "Neonates", "infant": "Infants", "child": "Children", "adolescent": "Adolescents",
     "pediatric": "Pediatric (under 18)", "adult": "Adults", "older_adult": "Older adults (65+)",
@@ -40,34 +36,29 @@ _AGE_NOUNS = {
     "neonate": "neonates", "infant": "infants", "child": "children", "adolescent": "adolescents",
     "pediatric": "children", "adult": "adults", "older_adult": "older adults", "all_ages": "patients",
 }
-_ROLE_LABELS = {
-    "condition": "Condition", "population": "Population", "age_group": "Age group", "sex": "Sex",
-    "pregnancy": "Pregnancy", "intervention": "Intervention", "exposure": "Exposure",
-    "index_test": "Test", "comparator": "Compared with", "reference_standard": "Reference standard",
-    "prognostic_factor": "Prognostic factor", "outcome": "Outcome", "setting": "Setting",
-    "time_frame": "Time frame", "study_design": "Study design", "publication_window": "Publication dates",
-}
 # Chip order in the card.
 ROLE_ORDER = [
-    "intervention", "exposure", "index_test", "comparator", "reference_standard", "outcome",
-    "prognostic_factor", "condition", "population", "age_group", "sex", "pregnancy", "setting",
-    "time_frame", "study_design", "publication_window",
+    "intervention", "exposure", "index_test", "comparator", "reference_standard", "threshold", "outcome",
+    "prognostic_factor", "reference_level", "phenomenon", "concept", "condition", "presentation",
+    "population", "age_group", "sex", "pregnancy", "setting", "starting_point", "prediction_moment",
+    "time_frame", "model_phase", "frequency_measure", "decision", "intended_users", "jurisdiction",
+    "perspective", "study_design", "publication_window",
 ]
 # Types where the patients' condition may also be the outcome of interest.
 _CONDITION_IS_OUTCOME_OK = {"prevention", "harm", "etiology_risk", "screening", "epidemiology"}
 
 
-def role_label(role: str, question_type: str) -> str:
-    if role == "intervention" and question_type in ("treatment", "prevention", "clinical_management"):
-        return "Treatment"
-    if role == "condition" and question_type == "diagnosis":
-        return "Target condition"
-    return _ROLE_LABELS.get(role, role.replace("_", " ").title())
+def role_label(role: str, question_type: str, framework: Optional[str] = None) -> str:
+    from clinical_engine.contracts.question import framework_for
+
+    return _framework_role_label(role, framework or framework_for(question_type), question_type)
 
 
 class ChipOption(BaseModel):
     value: str
     label: str
+    group: Optional[str] = None      # question types: the V2 intent
+    framework: Optional[str] = None  # question types: the framework it uses
 
 
 class Chip(BaseModel):
@@ -95,7 +86,8 @@ def chips(cqm: ClinicalQuestionMap) -> list[Chip]:
         id="question_type", role="question_type", label="Question type", value=cqm.question_type,
         display=TYPE_LABELS.get(cqm.question_type, cqm.question_type),
         source=cqm.question_type_source, state="active",
-        options=[ChipOption(value=t, label=TYPE_LABELS[t]) for t in QUESTION_TYPES],
+        options=[ChipOption(value=o["value"], label=o["label"], group=o["intent"], framework=o["framework"])
+                 for o in type_options()],
     )]
     ordered = sorted(cqm.elements, key=lambda e: (ROLE_ORDER.index(e.role) if e.role in ROLE_ORDER else 99))
     has_age = False
@@ -104,7 +96,7 @@ def chips(cqm: ClinicalQuestionMap) -> list[Chip]:
         if e.role == "age_group" and e.active and not e.negated:
             has_age = True
         out.append(Chip(
-            id=e.id, role=e.role, label=role_label(e.role, cqm.question_type), value=e.value,
+            id=e.id, role=e.role, label=role_label(e.role, cqm.question_type, cqm.framework), value=e.value,
             display=("Not " if e.negated else "") + _display(e),
             source=e.source, state=state, importance=e.importance,
             options=[ChipOption(value=a, label=AGE_LABELS[a]) for a in AGE_GROUPS] if e.role == "age_group" else [],
@@ -132,6 +124,7 @@ _PEOPLE_NOUN = re.compile(
 _AGE_WORD = re.compile(r"(?i)\b(adults?|child|children|infants?|neonat\w*|newborns?|elderly|older|"
                        r"p(?:a)?ediatric|adolescents?|teen\w*|geriatric)\b")
 _SCREEN_FOR = re.compile(r"(?i)^screening\s+for\s+(?P<target>.+)$")
+_EXPERIENCE_WORD = re.compile(r"(?i)\b(experiences?|perceptions?|perspectives?|views?|attitudes?|beliefs?)\b")
 _SCREEN_WORD = re.compile(r"(?i)^screening\s+(?:with|by|using|via)\s+|\s+screening$")
 
 
@@ -223,7 +216,47 @@ def build_summary(cqm: ClinicalQuestionMap) -> str:
         s += (f" for {_join(targets)}" if targets else "") + (f" with {_join(tools)}" if tools else "")
         s += f" improves {gains or 'outcomes'}"
     elif t == "prognosis":
-        s = "Prognosis" + (f" ({outs})" if outs else "") + f" of {pop}" + (f" by {factors}" if factors else "")
+        start = _join([e.value for e in cqm.active("starting_point")])
+        s = "Expected course" + (f" ({outs})" if outs else "") + f" of {pop}"
+        s += (f" from {start}" if start else "") + (f" by {factors}" if factors else "") + time_part
+    elif t == "prognostic_factor":
+        ref = _join([e.value for e in cqm.active("reference_level")])
+        s = f"Whether {factors or exps or 'the factor'}" + (f" (vs {ref})" if ref else "")
+        s += f" predicts {outs or 'outcomes'}{time_part} in {pop}"
+    elif t == "prediction_model":
+        model = factors or tests or "the prediction model"
+        s = f"How well {model} predicts {outs or 'the outcome'}{time_part} in {pop}"
+    elif t == "diagnostic_workup":
+        pres = _join([e.value for e in cqm.active("presentation")])
+        decision = _join([e.value for e in cqm.active("decision")])
+        s = f"Diagnostic workup of {pres or population_phrase(cqm, with_conditions=False)}"
+        s += (f" for {conds}" if conds else "") + (f" using {tests}" if tests else "")
+        s += (f" to decide {decision}" if decision else "")
+    elif t == "qualitative":
+        phen = _join([e.value for e in cqm.active("phenomenon")])
+        topic = ints or exps
+        # "patients' experiences" + "home hemodialysis" → "Experiences of home hemodialysis"
+        subject = topic if topic and (not phen or _EXPERIENCE_WORD.search(phen)) else (phen or topic)
+        s = f"Experiences of {subject or 'the topic'}"
+        if cqm.active("population") or cqm.active("condition") or cqm.active("age_group"):
+            s += f" among {pop}"
+    elif t == "evidence_map":
+        concept = _join([e.value for e in cqm.active("concept")]) or ints or exps
+        s = f"What is known about {concept or conds or 'the topic'}"
+        if cqm.active("population") or cqm.active("age_group") or cqm.active("setting") or (concept and conds):
+            s += f" in {pop}"
+    elif t == "monitoring":
+        s = f"Monitoring of {conds or ints or population_phrase(cqm, with_conditions=False)}"
+        s += (f" with {tests}" if tests else "") + (f" for {outs}" if outs else "")
+        if conds and (cqm.active("population") or cqm.active("age_group")):
+            s += f" in {population_phrase(cqm, with_conditions=False)}"
+    elif t == "complications":
+        s = "Complications" + (f" ({outs})" if outs else "") + f" of {ints or exps or conds or 'the procedure'}"
+        if ints or exps or cqm.active("population") or cqm.active("age_group"):
+            s += f" in {pop}"
+    elif t == "health_services":
+        s = f"Delivery of {ints or exps or 'care'}" + (f" for {pop}" if (conds or cqm.active('population')) else "")
+        s += (f" — {outs}" if outs else "")
     elif t == "epidemiology":
         s = f"How common {conds or outs or 'the condition'} is in {population_phrase(cqm, with_conditions=False)}"
     elif t == "clinical_management":
@@ -232,8 +265,14 @@ def build_summary(cqm: ClinicalQuestionMap) -> str:
             s += f" with {ints}"
         if cqm.active("age_group") or cqm.active("population") or cqm.active("setting"):
             s += f" in {population_phrase(cqm, with_conditions=False)}"
+        juris = _join([e.value for e in cqm.active("jurisdiction")])
+        if juris:
+            s += f" ({juris})"
     elif t == "background":
-        s = f"Background on {conds or ints or exps or tests or cqm.question_text.rstrip('?')}"
+        aspect = _join([e.value for e in cqm.active("concept")])
+        topic = conds or ints or exps or tests
+        s = (f"{aspect[0].upper() + aspect[1:]} of {topic}" if aspect and topic
+             else f"Background on {topic or aspect or cqm.question_text.rstrip('?')}")
     else:
         s = cqm.question_text.rstrip("?")
     s = " ".join(s.split())
@@ -275,7 +314,6 @@ def apply_edits(cqm: ClinicalQuestionMap, edits: list[ChipEdit]) -> ClinicalQues
                 raise EngineInputError("invalid_question_type", "Unknown question type.")
             new.question_type = edit.value  # type: ignore[assignment]
             new.question_type_source = "user_edited"
-            new.framework = framework_for(edit.value)  # type: ignore[assignment]
             continue
         if edit.op == "add":
             if edit.role not in ROLES:
@@ -311,5 +349,6 @@ def apply_edits(cqm: ClinicalQuestionMap, edits: list[ChipEdit]) -> ClinicalQues
                 raise EngineInputError("importance_outcome_only", "Importance applies to outcomes only.")
             element.importance = edit.importance
             element.source = "user_edited"
+    new.framework = map_framework(new)  # type: ignore[assignment]  # e.g. PEO → PECO once a comparator is added
     new.summary = build_summary(new)
     return new

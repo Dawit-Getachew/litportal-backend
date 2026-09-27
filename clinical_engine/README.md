@@ -13,7 +13,7 @@ a **durable orchestrator**, and the **typed contracts** the Week 2–4 work buil
   `/capabilities` then answers 404, nothing starts at boot, and the frontend falls back to the
   direct-search flow.
 
-## The flow
+## The flow (two-step review)
 
 ```
 clinician types question
@@ -23,21 +23,40 @@ POST /questions ──► PHI preflight ──► rules reading ─┐
                                     model reading ───┴─► verify vs. text ─► ClinicalQuestionMap v1
       │                                                   (quotes checked, age never inferred)
       ▼
-review card: one-line interpretation + chips (active / suggestion / excluded / age "Not specified")
-      │
-      ├── edit chips / retype ──► POST /questions/{id}/revise  → new version only if the edit is
-      │                                                          material; earlier runs invalidated
-      ├── decline ─────────────► POST /questions/{id}/decline  → nothing is ever searched
-      └── confirm ─────────────► POST /questions/{id}/confirm {version, mode}
-                                   records Approval (+ separate Delegation for "answer for me")
-                                   creates a run with a versioned task plan
+STEP 1 — check the question: summary + the framework's fields (Clinical Question Map V2:
+         PICO, PEO/PECO, diagnostic accuracy, workup, prognosis, PFO, prediction model,
+         PICo/SPIDER, PCC, CoCoPop, PIPOH, operational map, SPICE/CIMO)
+      ├── edit chips / change question type / retype ──► POST /questions/{id}/revise
+      ├── decline ────────────────────────────────────► POST /questions/{id}/decline
+      └── approve ────────────────────────────────────► POST /questions/{id}/approve-interpretation {version}
+                                                          records the interpretation approval, maps each
+                                                          concept to an exact MeSH heading (NCBI) and
+                                                          classified wordings (model) — nothing is searched
       ▼
-run: plan_search → retrieve → await_retrieval → integrity_check [→ delegated_selection]
+STEP 2 — check the search terms: per concept "must appear", MeSH heading, wordings
+         (same meaning / more specific ON when safe; broader / related OFF), a switch to
+         turn all alternative wordings off, publication years, animal-only filter,
+         sources, record counts (GET …/search-terms/counts — counts only) and the exact
+         PubMed query
+      ├── edit terms ─────► POST /questions/{id}/search-terms/revise {version, base_terms_version, edits}
+      ├── back to step 1 ─ (client-side; a real edit creates a new version, terms are rebuilt)
+      ├── decline
+      └── run ────────────► POST /questions/{id}/confirm {version, mode, search_terms_version}
+                             records Approval bound to the terms version + hash (+ Delegation)
+      ▼
+run: plan_search → retrieve (session gets engine_concept_plan) → await_retrieval → integrity_check
+     [→ delegated_selection]
 ```
 
-**No evidence-source call happens before approval** — enforced twice: runs are only created
-by `confirm`, and the tool gateway refuses any `evidence_source` tool unless the run's
-question version carries an approval and is still current.
+**The approved terms are exactly what is searched.** `services/engine_concept_plan.py` (shipped
+in the worker images; plain dicts, no engine import) makes the pipeline use the approved concepts
+as its must-have / ranking concepts and anchors, builds the queries from them (one AND block per
+"must appear" concept: MeSH OR title/abstract words; Europe PMC gets words only — its MESH field
+misbehaves inside OR groups), and skips the parser's ontology lifts, AI expansion, semantic-repair
+rewrites and the legacy fallback / thin-pool broadening. Sessions without a plan behave as before.
+
+The one-step `confirm` (no `search_terms_version`) still works for API clients; it runs the
+existing pipeline on the question text.
 
 ## API (all JSON, Bearer auth, owner-scoped)
 
@@ -48,7 +67,11 @@ question version carries an approval and is still current.
 | GET | `/questions` | Recent questions (summary only) |
 | GET | `/questions/{id}` | Question view: interpretation, chips, conflicts, warnings, versions, approval, run |
 | POST | `/questions/{id}/revise` `{base_version, text? \| edits?}` | Text re-interpretation or chip edits (`set`, `add`, `remove`, `accept`, `exclude`, `set_type`, `set_importance`). 409 `stale_version` on a stale base |
-| POST | `/questions/{id}/confirm` `{version, mode}` | `mode`: `review_papers` \| `answer_for_me`. Idempotent for the same version+mode; 409 on conflicts / stale version |
+| POST | `/questions/{id}/approve-interpretation` `{version}` | Step 1 → 2: interpretation approval + search terms (MeSH + wordings). Idempotent |
+| POST | `/questions/{id}/search-terms/revise` `{version, base_terms_version, edits}` | Term edits: `set_use_synonyms`, `set_term_enabled`, `add_term`, `remove_term`, `set_mesh_enabled`, `set_required`, `set_publication_years`, `set_exclude_animal_only`. 409 `stale_terms` |
+| GET | `/questions/{id}/search-terms/counts?version=&terms_version=` | PubMed / Europe PMC record counts for the terms (no records retrieved) |
+| POST | `/questions/{id}/confirm` `{version, mode, search_terms_version?}` | `mode`: `review_papers` \| `answer_for_me`. In step 2 the terms version is required (409 `stale_terms`). Idempotent for the same version+mode; 409 on conflicts / stale version |
+| POST | `/questions/{id}/feedback` `{helpful, comment?, run_id?}` | "Were these results helpful?" (PHI-screened comment); searched questions only |
 | POST | `/questions/{id}/decline` `{reason}` | `wrong_interpretation` \| `new_question` \| `other` |
 | GET | `/questions/{id}/trace` | Safe audit trace (no question text, prompts or evidence text) |
 | GET | `/runs/{id}` | Run state, task plan, usage/budget, search plan, integrity report, links |
@@ -150,6 +173,10 @@ longest; NCT links reports into a Study without merging them.
 | `CLINICAL_ENGINE_TASK_MAX_ATTEMPTS` / `_RETRY_BACKOFF_BASE_S` | 3 / 2.0 | |
 | `CLINICAL_ENGINE_LEASE_SECONDS` / `_POLL_INTERVAL_S` / `_RECOVERY_INTERVAL_S` | 60 / 3 / 30 | |
 | `CLINICAL_ENGINE_DELEGATED_MAX_ITEMS` | 8 | Answer-for-me evidence set size |
+| `CLINICAL_ENGINE_TERMS_MODEL` | GPT-4.1 on the configured provider | Model that classifies search terms (a small model mislabels siblings as synonyms); falls back to the interpreter model if the call fails |
+| `CLINICAL_ENGINE_TERMS_MAX_TOKENS` / `_TIMEOUT_S` | 1400 / 25 | Per term-classification call |
+| `CLINICAL_ENGINE_MESH_TIMEOUT_S` | 12 | NCBI MeSH lookups (uses `NCBI_API_KEY` / `NCBI_EMAIL` when set) |
+| `CLINICAL_ENGINE_MAX_TERM_REVISIONS` | 60 | Term edits per question version |
 
 Model provider settings are shared with the rest of the app (`LLM_PROVIDER`, `OPENAI_API_KEY` /
 `OPENROUTER_API_KEY`, `OPENAI_MODEL` / `OPENROUTER_MODEL`). Collections are created with their
@@ -169,7 +196,9 @@ set -a; . ../week1-e2e/litportal-test.env; set +a
 (pause/resume, cancel + stale rejection, crash recovery without duplicate writes, blocked
 unapproved/off-allowlist calls, budgets, bounded retries, supersession, delegation),
 `…_api.py` (HTTP: auth, ownership, flag, PHI, versioning, idempotent confirm, no search before
-approval), `…_benchmark.py` (frozen set discipline).
+approval), `…_benchmark.py` (frozen set discipline), `…_search_terms.py` (V2 frameworks, exact MeSH,
+term classification guards, edits, plan → queries, the two-step flow over HTTP, the plan reaching
+the search session, whole-blood → red-cell regression).
 
 Benchmark baseline: `python -m clinical_engine.benchmark.run_interpretation_baseline [--model]`.
 See `benchmark/BENCHMARK_PLAN.md` and `W1_REGISTER.md`.

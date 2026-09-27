@@ -146,6 +146,9 @@ async def test_transient_failure_recovers_within_budget(monkeypatch):
 # ── legacy adapter: pause/resume, cancel, restart/resume ────────────────────
 
 
+fake_legacy_plans: list = []  # [plans passed to the stubbed session start, per test]
+
+
 @pytest.fixture
 def fake_legacy(monkeypatch):
     """Stub the legacy pipeline: count session creations; the session stays
@@ -155,9 +158,10 @@ def fake_legacy(monkeypatch):
     monkeypatch.setattr(settings, "RETRIEVAL_ADAPTER", "legacy_pipeline")
     created: list[str] = []
 
-    async def start(user_id, inputs):
+    async def start(user_id, inputs, concept_plan=None):
         sid = f"fake-session-{uuid.uuid4().hex}"
         created.append(sid)
+        plans.append(concept_plan)
         await get_db()[Collections.SEARCH_SESSIONS].insert_one(
             {"id": sid, "user_id": user_id, "status": "searching", "original_question": inputs["question"],
              "deleted_at": None, "created_at": store.now()})
@@ -166,7 +170,10 @@ def fake_legacy(monkeypatch):
     async def set_status(sid, status):
         await get_db()[Collections.SEARCH_SESSIONS].update_one({"id": sid}, {"$set": {"status": status}})
 
+    plans: list = []
     monkeypatch.setattr(task_mod, "_start_legacy_session", start)
+    fake_legacy_plans.clear()
+    fake_legacy_plans.append(plans)
     return created, set_status
 
 

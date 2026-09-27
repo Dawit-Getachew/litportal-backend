@@ -17,33 +17,54 @@ from models.common import new_id
 
 SCHEMA_VERSION = "cqm.v1"
 
+# Question types follow the Clinical Question Map V2 (clinician's intent →
+# framework/view → fields emphasized); see clinical_engine/frameworks.py.
 QuestionType = Literal[
     "treatment",            # does an intervention work (PICO)
     "prevention",           # does an intervention prevent a condition (PICO)
-    "harm",                 # adverse effects of an exposure/intervention (PECO)
-    "etiology_risk",        # does an exposure raise risk (PECO / PEO)
-    "diagnosis",            # test accuracy (PIRD)
-    "screening",            # should a population be screened (PICO)
-    "prognosis",            # likely course / prognostic factors (PFO)
+    "harm",                 # adverse effects of an exposure/intervention (PEO/PECO)
+    "etiology_risk",        # does an exposure raise risk (PEO/PECO)
+    "diagnosis",            # test accuracy (diagnostic accuracy)
+    "diagnostic_workup",    # how to work up a presentation (diagnostic workup)
+    "screening",            # should a population be screened (operational map)
+    "prognosis",            # expected future course (overall prognosis)
+    "prognostic_factor",    # does a factor change the course (PFO)
+    "prediction_model",     # risk scores / prediction rules (prediction-model map)
+    "qualitative",          # experiences, views, perceptions (PICo/SPIDER)
+    "evidence_map",         # what is known across a topic (PCC)
     "epidemiology",         # incidence / prevalence (CoCoPop)
-    "clinical_management",  # how to manage a condition, no single intervention
-    "background",           # definitions, mechanisms
+    "clinical_management",  # guideline / management question (PIPOH-style)
+    "monitoring",           # how to monitor a condition or treatment (operational map)
+    "complications",        # complications of a condition or procedure (operational map)
+    "health_services",      # services, implementation, delivery of care (SPICE/CIMO)
+    "background",           # definitions, mechanisms (operational map)
     "other",
 ]
 
-Framework = Literal["PICO", "PECO", "PEO", "PIRD", "PFO", "CoCoPop", "open"]
+Framework = Literal[
+    "PICO", "PECO", "PEO", "PIRD", "DxWorkup", "Prognosis", "PFO", "PredictionModel", "PICo",
+    "PCC", "CoCoPop", "PIPOH", "Operational", "SPICE", "open",
+]
 
 FRAMEWORK_FOR_TYPE: dict[str, str] = {
     "treatment": "PICO",
     "prevention": "PICO",
-    "screening": "PICO",
-    "harm": "PECO",
+    "harm": "PEO",
     "etiology_risk": "PEO",
     "diagnosis": "PIRD",
-    "prognosis": "PFO",
+    "diagnostic_workup": "DxWorkup",
+    "screening": "Operational",
+    "prognosis": "Prognosis",
+    "prognostic_factor": "PFO",
+    "prediction_model": "PredictionModel",
+    "qualitative": "PICo",
+    "evidence_map": "PCC",
     "epidemiology": "CoCoPop",
-    "clinical_management": "open",
-    "background": "open",
+    "clinical_management": "PIPOH",
+    "monitoring": "Operational",
+    "complications": "Operational",
+    "health_services": "SPICE",
+    "background": "Operational",
     "other": "open",
 }
 
@@ -64,6 +85,20 @@ ElementRole = Literal[
     "time_frame",
     "study_design",
     "publication_window",
+    # Clinical Question Map V2 fields
+    "presentation",         # diagnostic workup: what the patient presents with
+    "threshold",            # test accuracy: positivity threshold
+    "decision",             # diagnostic workup: the decision the result informs
+    "starting_point",       # overall prognosis: when the course is measured from
+    "reference_level",      # PFO: the comparison level of the factor
+    "prediction_moment",    # prediction model: when the prediction is made
+    "model_phase",          # prediction model: development / validation / impact
+    "phenomenon",           # qualitative: the phenomenon of interest
+    "concept",              # PCC: the concept being mapped
+    "frequency_measure",    # CoCoPop: prevalence / incidence / rate
+    "intended_users",       # PIPOH: who the guidance is for
+    "jurisdiction",         # PIPOH: country / region / health system
+    "perspective",          # SPICE/CIMO: perspective or mechanism
 ]
 
 AgeGroup = Literal[
@@ -85,7 +120,7 @@ OutcomeImportance = Literal["critical", "important", "unspecified"]
 # Roles that restrict what evidence is eligible. An inferred value for these
 # must never become active without the clinician accepting it.
 RESTRICTIVE_ROLES: frozenset[str] = frozenset(
-    {"age_group", "sex", "pregnancy", "setting", "publication_window", "study_design"}
+    {"age_group", "sex", "pregnancy", "setting", "publication_window", "study_design", "jurisdiction"}
 )
 
 # Roles whose change alters what is being asked (a "material" edit).
@@ -94,8 +129,16 @@ MATERIAL_ROLES: frozenset[str] = frozenset(
         "condition", "population", "age_group", "sex", "pregnancy", "intervention",
         "exposure", "index_test", "comparator", "reference_standard",
         "prognostic_factor", "outcome", "setting", "time_frame", "publication_window",
-        "study_design",
+        "study_design", "presentation", "threshold", "decision", "starting_point",
+        "reference_level", "prediction_moment", "model_phase", "phenomenon", "concept",
+        "frequency_measure", "intended_users", "jurisdiction", "perspective",
     }
+)
+
+# Roles that name what the evidence is about — they become search concepts.
+SEARCH_ROLES: tuple[str, ...] = (
+    "condition", "presentation", "population", "intervention", "exposure", "index_test",
+    "prognostic_factor", "phenomenon", "concept", "comparator", "outcome",
 )
 
 
@@ -177,5 +220,11 @@ def material_hash(cqm: ClinicalQuestionMap) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def framework_for(question_type: str) -> str:
-    return FRAMEWORK_FOR_TYPE.get(question_type, "open")
+def framework_for(question_type: str, *, has_comparator: bool = False) -> str:
+    """V2: exposure/cause/harm questions read as PEO, or PECO once a comparator is stated."""
+    framework = FRAMEWORK_FOR_TYPE.get(question_type, "open")
+    return "PECO" if framework == "PEO" and has_comparator else framework
+
+
+def map_framework(cqm: "ClinicalQuestionMap") -> str:
+    return framework_for(cqm.question_type, has_comparator=bool(cqm.active("comparator")))

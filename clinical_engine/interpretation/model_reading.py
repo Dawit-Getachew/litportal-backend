@@ -11,21 +11,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from clinical_engine.contracts.question import AGE_GROUPS, QuestionElement
+from clinical_engine.contracts.question import AGE_GROUPS, ElementRole, QuestionElement, QuestionType
 
-QUESTION_TYPES = (
-    "treatment", "prevention", "harm", "etiology_risk", "diagnosis", "screening",
-    "prognosis", "epidemiology", "clinical_management", "background", "other",
-)
-ROLES = (
-    "condition", "population", "age_group", "sex", "pregnancy", "intervention", "exposure",
-    "index_test", "comparator", "reference_standard", "prognostic_factor", "outcome",
-    "setting", "time_frame", "study_design", "publication_window",
-)
+QUESTION_TYPES: tuple[str, ...] = get_args(QuestionType)
+ROLES: tuple[str, ...] = get_args(ElementRole)
 MAX_ELEMENTS = 16
 
 SYSTEM_PROMPT = """You interpret a clinician's question for a clinical-evidence search.
@@ -34,28 +27,40 @@ Return ONLY a JSON object:
   "stated": <true|false>, "quote": <exact words copied from the question, or null>,
   "importance": <"critical"|"important"|"unspecified"|null>}], "ambiguities": [<short string>]}
 
-question_type — one of:
+question_type — the clinician's intent, one of:
   treatment (does an intervention work), prevention (does an intervention prevent a condition),
-  harm (adverse effects of an intervention/exposure), etiology_risk (does an exposure raise risk),
-  diagnosis (accuracy of a test), screening (should a population be screened),
-  prognosis (likely course / prognostic factors), epidemiology (incidence / prevalence),
-  clinical_management (how to manage a condition, no single intervention named),
-  background (definition / mechanism), other.
+  harm (adverse effects of an intervention/exposure), etiology_risk (does an exposure cause or raise risk),
+  diagnosis (accuracy of a test for a target condition),
+  diagnostic_workup (how to evaluate a presentation, e.g. "how should syncope be worked up"),
+  screening (should a population be screened), prognosis (expected future course of a condition),
+  prognostic_factor (does a factor change the course, e.g. "does frailty predict mortality after TAVR"),
+  prediction_model (a risk score, prediction rule or model, e.g. "how well does qSOFA predict mortality"),
+  qualitative (experiences, views, perceptions, barriers), evidence_map (what is known across a broad topic),
+  epidemiology (incidence / prevalence), clinical_management (guideline or management of a condition,
+  no single intervention named), monitoring (how or how often to monitor a condition or treatment),
+  complications (the complications of a condition or procedure), health_services (delivery of care,
+  implementation, services, costs), background (definition / mechanism), other.
   "Impact/effect/efficacy of <drug or procedure> on <outcome>" is treatment (or prevention), not prognosis.
 
 roles:
   condition — the disease or state the patients HAVE (e.g. septic shock). In diagnosis questions it is
-    the target condition being diagnosed (e.g. sepsis), not the reason for testing.
+    the target condition being diagnosed; in diagnostic_workup the conditions under consideration.
   population — who the patients are beyond condition and age (e.g. critically ill, mechanically ventilated,
     postmenopausal women, suspected infection). Never an age alone: use age_group for age.
   intervention / comparator — the treatments or strategies being compared (e.g. hydrocortisone taper vs
     abrupt discontinuation). exposure — a non-treatment exposure, or a drug studied for harm.
-  index_test / reference_standard — diagnosis and screening questions only.
+  index_test / reference_standard / threshold — diagnosis, screening and monitoring tests.
   outcome — what is measured (e.g. 28-day mortality). For prevention or incidence questions the prevented
-    or incident condition is an outcome, not a condition.
+    or incident condition is an outcome, not a condition. For complications questions, the complication.
   setting — where care happens (e.g. intensive care unit, emergency department, primary care, nursing home,
     low-income countries). Timing, dose or duration is never a setting.
-  prognostic_factor, time_frame, study_design, publication_window, sex, pregnancy.
+  prognostic_factor (also the predictors of a prediction model), reference_level (comparison level of a factor),
+  starting_point (when a prognosis starts, e.g. at diagnosis), prediction_moment (when a model predicts),
+  model_phase (development, validation or impact), presentation (what a patient presents with, e.g. syncope),
+  decision (the decision a workup informs), phenomenon (the experience studied in qualitative questions),
+  concept (the concept of an evidence map), frequency_measure (prevalence, incidence, rate),
+  intended_users (who guidance is for), jurisdiction (country or health system), perspective (whose view,
+  or the mechanism, in health-services questions), time_frame, study_design, publication_window, sex, pregnancy.
   age_group values: neonate, infant, child, adolescent, pediatric, adult, older_adult, all_ages.
 
 Rules:
@@ -66,6 +71,8 @@ Rules:
   or its incidence.
 - Values are short noun phrases (max 8 words), canonical clinical terms, e.g. "steroids" -> "corticosteroids";
   no verbs such as "diagnosing", and never another element inside a value.
+- Keep each value to ONE concept exactly as specific as the question: never broaden it (whole blood
+  transfusion is not "blood transfusion") and never swap it for a related concept.
 - Mark patient-important outcomes such as mortality as "critical".
 - No citations, identifiers, URLs, study names or recommendations. JSON only."""
 

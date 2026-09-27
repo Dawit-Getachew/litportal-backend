@@ -131,7 +131,6 @@
             "packed red blood cell transfusion",
             "PRBC transfusion",
             "transfusion of red blood cells",
-            "blood transfusion",
             "erythrocyte transfusion",
             "packed red blood cells"
           ],
@@ -149,11 +148,9 @@
           "concept": "red blood cell transfusion",
           "synonyms": [
             "RBC transfusion",
-            "blood transfusion",
             "erythrocyte transfusion",
             "packed red blood cells",
             "PRBC transfusion",
-            "transfusion",
             "transfusion strategy",
             "transfusion threshold"
           ],

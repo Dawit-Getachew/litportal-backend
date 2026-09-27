@@ -8,11 +8,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from models.common import new_id, utcnow
 
+from clinical_engine.search_terms.contracts import SearchTerms
+
 from .question import ClinicalQuestionMap, IntentConflict
 
 QuestionStatus = Literal[
-    "awaiting_confirmation",  # interpretation shown, waiting for the clinician
+    "awaiting_confirmation",  # step 1: interpretation shown, waiting for the clinician
     "needs_clarification",    # blocking conflicts — must be edited before approval
+    "awaiting_search_terms",  # step 2: interpretation approved; search terms shown for review
     "confirmed",              # an approved version exists; a run was started
     "declined",               # clinician discarded this question
     "blocked_phi",            # PHI detected — nothing stored, nothing searched
@@ -45,8 +48,23 @@ class InterpretationMeta(BaseModel):
     rejected_model_fields: list[str] = Field(default_factory=list)
 
 
+class InterpretationApproval(BaseModel):
+    """Step 1: the clinician approved *this exact* interpretation version and moved
+    on to reviewing the search terms. Nothing is searched yet."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(default_factory=new_id)
+    user_id: str
+    version: int
+    material_hash: str
+    statement: str
+    approved_at: datetime = Field(default_factory=utcnow)
+
+
 class ApprovalRecord(BaseModel):
-    """The clinician confirmed *this exact* interpretation version."""
+    """The clinician confirmed *this exact* interpretation version — and, in the
+    two-step flow, this exact version of the search terms — and chose a mode."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -56,6 +74,8 @@ class ApprovalRecord(BaseModel):
     material_hash: str
     mode: RunMode
     statement: str
+    search_terms_version: Optional[int] = None
+    search_terms_hash: Optional[str] = None
     approved_at: datetime = Field(default_factory=utcnow)
 
 
@@ -103,6 +123,8 @@ class QuestionVersionDoc(BaseModel):
     conflicts: list[IntentConflict] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     interpretation: InterpretationMeta
+    interpretation_approval: Optional[InterpretationApproval] = None
+    search_terms: Optional[SearchTerms] = None
     approval: Optional[ApprovalRecord] = None
     delegation: Optional[DelegationRecord] = None
     created_at: datetime = Field(default_factory=utcnow)
@@ -190,3 +212,18 @@ class TraceDoc(BaseModel):
     event: str
     actor: str = "system"
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class FeedbackDoc(BaseModel):
+    """Was the result helpful? Optional comment (PHI-screened before storage)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(default_factory=new_id)
+    user_id: str
+    question_id: str
+    version: Optional[int] = None
+    run_id: Optional[str] = None
+    helpful: bool
+    comment: Optional[str] = None
+    created_at: datetime = Field(default_factory=utcnow)

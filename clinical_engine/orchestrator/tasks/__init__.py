@@ -67,20 +67,38 @@ Handler = Callable[[TaskContext], Awaitable[dict[str, Any]]]
 # ── plan_search ─────────────────────────────────────────────────────────────
 
 
+def approved_concept_plan(version: dict[str, Any], cqm: ClinicalQuestionMap) -> Optional[dict[str, Any]]:
+    """The search plan from the terms the clinician approved in step 2 — only
+    when the approval is bound to those exact terms."""
+    from clinical_engine.search_terms.contracts import SearchTerms, terms_hash
+    from clinical_engine.search_terms.plan import to_concept_plan
+
+    approval = version.get("approval") or {}
+    raw = version.get("search_terms")
+    if not raw or approval.get("search_terms_version") is None:
+        return None
+    terms = SearchTerms.model_validate(raw)
+    if terms.version != approval["search_terms_version"] or terms_hash(terms) != approval.get("search_terms_hash"):
+        raise FatalTaskError("search_terms_mismatch", "The approved search terms were changed after approval.")
+    return to_concept_plan(terms, cqm)
+
+
 async def plan_search(ctx: TaskContext) -> dict[str, Any]:
-    return {"search_plan": search_plan(ctx.cqm, ctx.version["version"])}
+    concept_plan = approved_concept_plan(ctx.version, ctx.cqm)
+    return {"search_plan": search_plan(ctx.cqm, ctx.version["version"], concept_plan=concept_plan)}
 
 
 # ── retrieve ────────────────────────────────────────────────────────────────
 
 
-async def _start_legacy_session(user_id: str, inputs: dict[str, str]) -> str:
+async def _start_legacy_session(user_id: str, inputs: dict[str, str],
+                                concept_plan: Optional[dict[str, Any]] = None) -> str:
     from models.sessions import SearchSessionCreate
-    from routers.search_sessions import create_session
+    from routers.search_sessions import start_session
 
-    resp = await create_session(
+    resp = await start_session(
         SearchSessionCreate(question=inputs["question"], population_focus=inputs["population_focus"]),
-        current_user={"id": user_id},
+        user_id, extras={"engine_concept_plan": concept_plan} if concept_plan else None,
     )
     if hasattr(resp, "status_code"):  # JSONResponse → the legacy PHI guard blocked it
         raise FatalTaskError("phi_blocked", "The search text was blocked by the PHI guard.")
@@ -153,19 +171,23 @@ async def retrieve(ctx: TaskContext) -> dict[str, Any]:
 
     cp = ctx.checkpoint
     inputs = legacy_search_inputs(ctx.cqm, ctx.version.get("change_kind", "initial"))
+    concept_plan = approved_concept_plan(ctx.version, ctx.cqm)
     session_id = cp.get("search_session_id")
     if not session_id and cp.get("phase") == "creating":
         session_id = await _find_adoptable_session(ctx.run["user_id"], inputs["question"], cp.get("creating_at"))
     if not session_id:
         await ctx.save_checkpoint({"phase": "creating", "creating_at": store.now()})
         session_id = await ctx.tools.call(
-            "legacy.search_session", _start_legacy_session, ctx.run["user_id"], inputs,
+            "legacy.search_session", _start_legacy_session, ctx.run["user_id"], inputs, concept_plan,
         )
         await ctx.save_checkpoint({"phase": "created", "search_session_id": session_id})
     return {
         "adapter": "legacy_pipeline", "evidence_label": "live_legacy_pipeline",
         "search_session_id": session_id, "question_source": inputs["source"],
         "population_focus": inputs["population_focus"],
+        # Which approved search terms drove the search (None = the pipeline's own reading).
+        "search_terms": ({"terms_version": concept_plan["terms_version"], "terms_hash": concept_plan["terms_hash"]}
+                         if concept_plan else None),
         "links": {"search_session_id": session_id},
     }
 

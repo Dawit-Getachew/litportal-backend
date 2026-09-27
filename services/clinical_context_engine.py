@@ -218,6 +218,52 @@ def _pico_block_for_role_lift(role: str) -> str | None:
     return None
 
 
+# Words that join two noun phrases. A concept containing one is a glued
+# phrase ("X in patients with Y") whose parts may be separate concepts; a
+# concept without one is a single noun phrase.
+_PHRASE_JOINERS: frozenset[str] = frozenset({
+    "in", "with", "for", "of", "and", "or", "versus", "vs", "after", "before", "among",
+    "on", "to", "from", "by", "during", "without", "compared", "than", "at", "following",
+})
+
+
+def _tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", (text or "").lower())
+
+
+def _existing_phrases_by_block(picott: dict[str, Any]) -> list[tuple[list[str], str | None]]:
+    """(tokens, PICO block) of every concept phrase the PICOTT already has."""
+    out: list[tuple[list[str], str | None]] = []
+    for key in ("must_have_concepts", "should_have_concepts", "ranking_concepts"):
+        for c in (picott.get(key) or []):
+            if isinstance(c, dict) and c.get("concept"):
+                out.append((_tokens(c["concept"]), _pico_block_for_role_lift(c.get("role") or "")))
+    for block, values in (picott.get("pico") or {}).items():
+        for v in (values or []) if isinstance(values, list) else []:
+            if isinstance(v, str) and v:
+                out.append((_tokens(v), block))
+    return out
+
+
+def _is_fragment_of_existing(term: str, role: str, existing: list[tuple[list[str], str | None]]) -> bool:
+    """True when *term* is a contiguous part of a longer single-noun-phrase
+    concept already in the PICOTT, in the same PICO block — e.g. "blood
+    transfusion" inside "whole blood transfusion". Lifting it would add a
+    broader concept (whose pack synonyms may even name a sibling, such as
+    red cell transfusion) as a separate required anchor."""
+    t = _tokens(term)
+    block = _pico_block_for_role_lift(role)
+    if not t or block is None:
+        return False
+    n = len(t)
+    for phrase, phrase_block in existing:
+        if phrase_block != block or len(phrase) <= n or _PHRASE_JOINERS.intersection(phrase):
+            continue
+        if any(phrase[i:i + n] == t for i in range(len(phrase) - n + 1)):
+            return True
+    return False
+
+
 def _lift_ontology_into_picott(
     picott: dict[str, Any],
     ontology_mappings: list[dict[str, Any]],
@@ -252,6 +298,7 @@ def _lift_ontology_into_picott(
 
     from services.role_weighting import _canonical_role  # noqa: WPS433
 
+    existing_phrases = _existing_phrases_by_block(picott)
     must_have_list = picott.setdefault("must_have_concepts", [])
     pico_blocks = picott.setdefault("pico", {})
 
@@ -271,6 +318,10 @@ def _lift_ontology_into_picott(
             continue
         # Don't lift if a synonym of an existing concept already covers it.
         if any(s in existing_keys for s in (s.lower() for s in (m.get("synonyms") or []) if s)):
+            continue
+        # Don't lift a fragment of a concept the parser already has.
+        matched_text = m.get("original_term") or m.get("normalized_term") or ""
+        if _is_fragment_of_existing(matched_text, role_hint, existing_phrases):
             continue
 
         # Determine PICOTT block + canonical role.

@@ -81,6 +81,18 @@ def framework_display_fields(session_doc: dict) -> dict[str, Any]:
     (CoCoPop) and a diagnostic-accuracy question (PIRD) looked
     identical. Read-only; never affects retrieval or ranking.
     """
+    # A search run from clinician-approved terms reports the framework the
+    # clinician approved, not the pipeline's own reading of the question.
+    plan = session_doc.get("engine_concept_plan")
+    if isinstance(plan, dict) and plan.get("framework_label"):
+        return {
+            "question_framework": str(plan["framework_label"]),
+            "question_framework_raw": plan.get("framework"),
+            "question_frameworks": [str(plan["framework_label"])],
+            "clinical_intent": str(plan.get("intent_label") or NOT_SPECIFIED),
+            "clinical_intent_raw": plan.get("question_type"),
+            "secondary_clinical_intents": [],
+        }
     cqm = session_doc.get("clinical_question_map_json") or {}
     if not isinstance(cqm, dict):
         return {

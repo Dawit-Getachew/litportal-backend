@@ -111,13 +111,20 @@ def _time_elements(text: str) -> list[QuestionElement]:
 _TYPE_CUES: list[tuple[str, str]] = [
     ("diagnosis", r"\b(sensitivity|specificity|diagnostic (?:accuracy|performance|yield|value)|accuracy of|how accurate|to (?:diagnose|detect|rule out)|for (?:diagnosing|detecting|the diagnosis of|the detection of)|rule[- ]out|predictive value|likelihood ratio|detect(?:ing|ion)? of)\b"),
     ("screening", r"\b(screening|screen(?:ed)? for|be screened)\b"),
+    ("diagnostic_workup", r"\b(work[- ]?up|worked[- ]up|working[- ]up|diagnostic (?:approach|strategy|pathway|evaluation|algorithm)|differential diagnosis|how (?:to|should (?:we |i |one )?)(?:evaluate|investigate|work up))\b"),
+    ("qualitative", r"\b(experiences? of|lived experience|perceptions? of|perspectives? of|attitudes? (?:of|to|toward)|beliefs? about|views? of|barriers? (?:to|and facilitators)|facilitators? (?:of|to)|qualitative)\b"),
+    ("evidence_map", r"\b(scoping review|evidence maps?|mapping the evidence|what (?:is known|research exists|evidence exists) (?:about|on)|overview of (?:the )?(?:evidence|research|literature))\b"),
     ("prevention", r"\b(prevent(?:s|ing|ion)?|prophyla\w*|reduce the (?:risk|incidence) of|risk reduction)\b"),
     ("harm", r"\b(side[- ]effects?|adverse (?:events?|effects?|reactions?)|harms?|toxicit\w*|safety of|complications? of)\b"),
     ("etiology_risk", r"\b(risk factors?|associated with|association (?:between|of)|link(?:ed)? (?:to|between)|caus(?:e|es|ed) by|exposure to|increase(?:s|d)? the risk|risk of \w+ (?:with|after|from|in))\b"),
-    ("prognosis", r"\b(prognos\w*|predictors? of|natural history|life expectancy|survival rates?|long[- ]term outcomes? of|recurrence rates?|course of)\b"),
+    ("prediction_model", r"\b(predict(?:ion|ive)? (?:models?|rules?|tools?|scores?)|risk (?:scores?|models?|calculators?|prediction)|(?:clinical )?(?:decision|prediction) rules?|prognostic (?:models?|scores?|index)|nomograms?|how well (?:does|do|can) .{0,40}predict|(?:validation|derivation|development) of .{0,40}(?:scores?|models?|rules?|tools?))\b"),
+    ("prognostic_factor", r"\b(prognostic (?:factors?|markers?|value|significance)|predictors? of|(?:is|are) .{0,50}(?:predictive of|a predictor of)|how does .{0,50}relate to (?:mortality|survival|outcomes?|prognosis))\b"),
+    ("prognosis", r"\b(prognos\w*|natural history|life expectancy|survival rates?|long[- ]term outcomes? of|recurrence rates?|course of)\b"),
     ("epidemiology", r"\b(incidence|prevalence|how common|epidemiolog\w*|how many (?:patients|people))\b"),
     ("treatment", r"\b(treat(?:s|ing|ment)?|therap(?:y|ies|eutic)|efficacy|effectiveness|effective|impact of|effects? of|benefits? of|role of|use of|dos(?:e|ing|age)|timing of|versus|vs\.?|compared (?:with|to)|should .{0,40} (?:be used|be given|receive)|does .{0,60} (?:reduce|improve|lower|decrease|increase|shorten|prolong|affect|change)|do .{0,60} (?:reduce|improve|lower|decrease|increase|shorten|prolong|affect|change)|is .{0,60} (?:effective|superior|better|beneficial))\b"),
-    ("clinical_management", r"\b(management of|manag(?:e|ing)|approach to|how (?:to|should) .{0,30}(?:treat|manage)|treatment options|best treatment|first[- ]line)\b"),
+    ("clinical_management", r"\b(management of|manag(?:e|ing)|approach to|how (?:to|should) .{0,30}(?:treat|manage)|treatment options|best treatment|first[- ]line|guidelines? (?:for|on))\b"),
+    ("monitoring", r"\b(monitor(?:ing|ed)? (?:of|for|in)|surveillance (?:of|for|after)|how often should .{0,40}(?:checked|measured|monitored|tested|repeated)|follow[- ]up (?:testing|imaging|schedule|intervals?))\b"),
+    ("health_services", r"\b(implementation of|health services?|service delivery|cost[- ]effectiveness|quality improvement|care pathways?|models? of care|staffing|workforce)\b"),
 ]
 _BACKGROUND = re.compile(r"^\s*(what (?:is|are)|define|definition of|explain|describe|tell me about)\b", re.I)
 _EFFECT_WORDS = re.compile(
@@ -133,8 +140,14 @@ class TypeReading:
     cues: list[str] = field(default_factory=list)
 
 
+_NOT_BACKGROUND = re.compile(
+    r"\b(experiences?|perceptions?|attitudes?|beliefs?|views?|barriers?|facilitators?|work[- ]?up|worked up|"
+    r"scoping|evidence map|what is known|how often)\b", re.I,
+)
+
+
 def classify(text: str) -> TypeReading:
-    if _BACKGROUND.search(text) and not _EFFECT_WORDS.search(text):
+    if _BACKGROUND.search(text) and not _EFFECT_WORDS.search(text) and not _NOT_BACKGROUND.search(text):
         return TypeReading("background", 0.8, ["what-is"])
     hits: list[tuple[str, str]] = []
     for qtype, pattern in _TYPE_CUES:
@@ -146,7 +159,9 @@ def classify(text: str) -> TypeReading:
     types = [h[0] for h in hits]
     # Specific designs beat generic therapy cues ("accuracy of X" is diagnosis
     # even though "of" phrases also look like therapy questions).
-    for specific in ("diagnosis", "screening", "epidemiology", "prognosis", "prevention", "harm", "etiology_risk"):
+    for specific in ("diagnosis", "prediction_model", "diagnostic_workup", "qualitative", "evidence_map",
+                     "screening", "epidemiology", "prognostic_factor", "prognosis", "prevention", "harm",
+                     "etiology_risk", "health_services"):
         if specific in types:
             # "effect of X on risk of Y" with a therapy cue → still prevention/harm/etiology
             return TypeReading(specific, 0.7, [h[1] for h in hits])
