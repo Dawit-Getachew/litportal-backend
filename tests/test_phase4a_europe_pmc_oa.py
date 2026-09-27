@@ -87,3 +87,14 @@ async def test_source_configs_last_success_at_updated():
     cli = _client_returning(_MockResp(200, JATS_SAMPLE.encode("utf-8")))
     result = await europe_pmc_oa.fetch(pmcid="PMC1234567", pmid=None, client=cli)
     assert result["status"] == "fetched"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pmcid", ["PMC1234567", "1234567"])
+async def test_requests_the_documented_pmcid_endpoint(pmcid):
+    # Europe PMC serves full text at /rest/{PMCID}/fullTextXML; /rest/PMC/{PMCID}/... is a 404.
+    cli = _client_returning(_MockResp(200, JATS_SAMPLE.encode("utf-8")))
+    await europe_pmc_oa.fetch(pmcid=pmcid, pmid=None, client=cli)
+    assert cli.get.call_args.args[0] == (
+        "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC1234567/fullTextXML"
+    )
