@@ -357,16 +357,30 @@ async def revise_question(user: dict, question_id: str, *, base_version: int,
     return await question_view(await _load(user_id, question_id))
 
 
-async def approve_interpretation(user: dict, question_id: str, *, version: int) -> dict[str, Any]:
+async def approve_interpretation(user: dict, question_id: str, *, version: int,
+                                 use_synonyms: Optional[bool] = None) -> dict[str, Any]:
     """Step 1 → step 2: record the interpretation approval and map the concepts to
-    MeSH and alternative wordings for review. Nothing is searched."""
+    MeSH and alternative wordings for review. Nothing is searched.
+
+    ``use_synonyms=False`` is the step-1 "search my exact terms only" choice: the
+    wordings are still mapped and listed (so the clinician can switch them back on
+    in step 2) but start switched off."""
     user_id = user["id"]
     q = await _load(user_id, question_id)
     current = await store.get_version(question_id, version)
     if current is None or version != q.get("current_version"):
         raise EngineConflict("stale_version", "The interpretation changed — review the latest version.")
     if current.get("interpretation_approval") and current.get("search_terms"):
-        return await question_view(q)  # idempotent (double click, or "back" then approve again)
+        # Idempotent (double click). After "back to question", approving again with a
+        # different exact-terms choice applies it as an ordinary terms edit.
+        existing = SearchTerms.model_validate(current["search_terms"])
+        if (use_synonyms is not None and use_synonyms != existing.use_synonyms
+                and q["status"] == "awaiting_search_terms"):
+            return await revise_search_terms(
+                user, question_id, version=version, base_terms_version=existing.version,
+                edits=[TermEdit(op="set_use_synonyms", enabled=use_synonyms)],
+            )
+        return await question_view(q)
     if q["status"] != "awaiting_confirmation":
         code = "blocking_conflicts" if q["status"] == "needs_clarification" else "not_approvable"
         raise EngineConflict(code, "Resolve the highlighted problems before continuing." if code == "blocking_conflicts"
@@ -377,6 +391,8 @@ async def approve_interpretation(user: dict, question_id: str, *, version: int) 
     cqm = ClinicalQuestionMap.model_validate(current["map"])
     allow_model = (await store.count_interpretation(user_id)) <= settings.MAX_INTERPRETATIONS_PER_HOUR
     terms = await build_search_terms(cqm, question_version=version, allow_model=allow_model)
+    if use_synonyms is False:
+        terms.use_synonyms = False
     approval = InterpretationApproval(user_id=user_id, version=version, material_hash=current["material_hash"],
                                       statement=INTERPRETATION_APPROVAL_STATEMENT.format(v=version))
     if not await store.record_interpretation_approval(current["id"], approval.model_dump(), terms.model_dump()):
@@ -388,7 +404,7 @@ async def approve_interpretation(user: dict, question_id: str, *, version: int) 
                  material_hash=current["material_hash"], concepts=len(terms.concepts),
                  mesh_headings=sum(1 for c in terms.concepts if c.mesh), mesh=m.mesh, synonyms=m.synonyms,
                  model=m.model, fallback_reason=m.fallback_reason, tokens_in=m.tokens_in, tokens_out=m.tokens_out,
-                 latency_ms=m.latency_ms, rejected=m.rejected)
+                 latency_ms=m.latency_ms, rejected=m.rejected, use_synonyms=terms.use_synonyms)
     return await question_view(await _load(user_id, question_id))
 
 

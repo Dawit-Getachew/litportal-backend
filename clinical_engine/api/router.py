@@ -64,6 +64,8 @@ class ConfirmQuestionBody(BaseModel):
 class ApproveInterpretationBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     version: int = Field(ge=1)
+    # Step-1 "search my exact terms only": false starts step 2 with alternative wordings off.
+    use_synonyms: Optional[bool] = None
 
 
 class ReviseSearchTermsBody(BaseModel):
@@ -136,7 +138,8 @@ async def confirm_question(question_id: str, body: ConfirmQuestionBody,
 @router.post("/questions/{question_id}/approve-interpretation", dependencies=[Depends(_enabled)])
 async def approve_interpretation(question_id: str, body: ApproveInterpretationBody,
                                  current_user: dict = Depends(get_current_user)):
-    return await _call(questions.approve_interpretation(current_user, question_id, version=body.version))
+    return await _call(questions.approve_interpretation(current_user, question_id, version=body.version,
+                                                        use_synonyms=body.use_synonyms))
 
 
 @router.post("/questions/{question_id}/search-terms/revise", dependencies=[Depends(_enabled)])

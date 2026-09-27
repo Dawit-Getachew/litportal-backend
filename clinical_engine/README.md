@@ -67,7 +67,7 @@ existing pipeline on the question text.
 | GET | `/questions` | Recent questions (summary only) |
 | GET | `/questions/{id}` | Question view: interpretation, chips, conflicts, warnings, versions, approval, run |
 | POST | `/questions/{id}/revise` `{base_version, text? \| edits?}` | Text re-interpretation or chip edits (`set`, `add`, `remove`, `accept`, `exclude`, `set_type`, `set_importance`). 409 `stale_version` on a stale base |
-| POST | `/questions/{id}/approve-interpretation` `{version}` | Step 1 → 2: interpretation approval + search terms (MeSH + wordings). Idempotent |
+| POST | `/questions/{id}/approve-interpretation` `{version, use_synonyms?}` | Step 1 → 2: interpretation approval + search terms (MeSH + wordings). `use_synonyms: false` = step-1 "exact terms only" (wordings listed but off). Idempotent; a changed `use_synonyms` after going back is applied as a terms edit |
 | POST | `/questions/{id}/search-terms/revise` `{version, base_terms_version, edits}` | Term edits: `set_use_synonyms`, `set_term_enabled`, `add_term`, `remove_term`, `set_mesh_enabled`, `set_required`, `set_publication_years`, `set_exclude_animal_only`. 409 `stale_terms` |
 | GET | `/questions/{id}/search-terms/counts?version=&terms_version=` | PubMed / Europe PMC record counts for the terms (no records retrieved) |
 | POST | `/questions/{id}/confirm` `{version, mode, search_terms_version?}` | `mode`: `review_papers` \| `answer_for_me`. In step 2 the terms version is required (409 `stale_terms`). Idempotent for the same version+mode; 409 on conflicts / stale version |

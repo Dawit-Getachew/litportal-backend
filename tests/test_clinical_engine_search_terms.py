@@ -634,3 +634,32 @@ async def test_start_session_stores_the_plan_on_the_session(client, monkeypatch)
     body = json.loads(blocked.body)
     stored = await get_db()[Collections.SEARCH_SESSIONS].find_one({"id": body["session_id"]}, {"_id": 0})
     assert stored["status"] == "blocked_phi" and "engine_concept_plan" not in stored
+
+
+async def test_step_one_exact_terms_only_starts_step_two_with_synonyms_off(client, engine_api, monkeypatch):
+    fake = FakeGateway({"hemorrhagic shock": [("haemorrhagic shock", "equivalent")]})
+    monkeypatch.setattr(builder, "_terms_gateways", lambda: [fake])
+    h = await _signup(client)
+    view = (await client.post(f"{BASE}/questions", headers=h,
+                              json={"text": "Is whole blood transfusion effective for survival in hemorrhagic shock?"})).json()
+    qid, v = view["question_id"], view["version"]
+    r = await client.post(f"{BASE}/questions/{qid}/approve-interpretation", headers=h,
+                          json={"version": v, "use_synonyms": False})
+    assert r.status_code == 200, r.text
+    st = r.json()["search_terms"]
+    assert st["use_synonyms"] is False and st["version"] == 1
+    shock = next(c for c in st["concepts"] if c["term"] == "hemorrhagic shock")
+    assert any(t["text"] == "haemorrhagic shock" for t in shock["terms"])  # still listed, to switch back on
+    assert "haemorrhagic" not in st["query_preview"]["pubmed"]
+    assert '"Shock, Hemorrhagic"[MeSH Terms]' in st["query_preview"]["pubmed"]
+    # Back to step 1 and approve again with synonyms on → applied as a terms edit.
+    st2 = (await client.post(f"{BASE}/questions/{qid}/approve-interpretation", headers=h,
+                             json={"version": v, "use_synonyms": True})).json()["search_terms"]
+    assert st2["use_synonyms"] is True and st2["version"] == 2 and "haemorrhagic" in st2["query_preview"]["pubmed"]
+    # Same choice again (or no choice) is a no-op.
+    st3 = (await client.post(f"{BASE}/questions/{qid}/approve-interpretation", headers=h,
+                             json={"version": v})).json()["search_terms"]
+    assert st3["version"] == 2
+    trace = (await client.get(f"{BASE}/questions/{qid}/trace", headers=h)).json()["events"]
+    approved = next(e for e in trace if e["event"] == "interpretation_approved")
+    assert approved["details"]["use_synonyms"] is False
