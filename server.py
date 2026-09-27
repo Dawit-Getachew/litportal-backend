@@ -25,7 +25,7 @@ from starlette.middleware.cors import CORSMiddleware  # noqa: E402
 
 from core.config import settings  # noqa: E402
 from core.db import Collections, close_client, ensure_indexes, get_db  # noqa: E402
-from core.security import hash_password  # noqa: E402
+from core.security import hash_password_async  # noqa: E402
 from models.source_configs import SourceConfigDoc  # noqa: E402
 from models.guideline_sources import GuidelineSourceDoc  # noqa: E402
 from models.users import UserDoc  # noqa: E402
@@ -468,7 +468,7 @@ async def _seed_user_if_missing(
     user = UserDoc(
         email=email,
         name=name,
-        hashed_password=hash_password(password),
+        hashed_password=await hash_password_async(password),
         role=role,  # type: ignore[arg-type]
         first_use_acknowledged=first_use_acknowledged,
     )

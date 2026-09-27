@@ -34,10 +34,10 @@ from core.security import (
     create_refresh_token,
     decode_refresh_token,
     get_current_user,
-    hash_password,
+    hash_password_async,
     record_login_failure,
     reset_login_attempts,
-    verify_password,
+    verify_password_async,
 )
 from core.security import _upsert_identity_user  # provisioning helper (shared)
 from models.users import (
@@ -182,7 +182,7 @@ async def signup(body: UserSignup, request: Request, response: Response):
     user = UserDoc(
         email=email,
         name=body.name.strip(),
-        hashed_password=hash_password(body.password),
+        hashed_password=await hash_password_async(body.password),
         role="user",
         first_use_acknowledged=False,
     )
@@ -210,7 +210,7 @@ async def login(body: UserLogin, request: Request, response: Response):
     db = get_db()
     check_login_rate_limit(email, request)
     user = await db[Collections.USERS].find_one({"email": email}, {"_id": 0})
-    if not user or not verify_password(body.password, user.get("hashed_password", "")):
+    if not user or not await verify_password_async(body.password, user.get("hashed_password", "")):
         record_login_failure(email, request)
         raise HTTPException(status_code=401, detail="Invalid email or password.")
     reset_login_attempts(email, request)
