@@ -663,3 +663,112 @@ async def test_step_one_exact_terms_only_starts_step_two_with_synonyms_off(clien
     trace = (await client.get(f"{BASE}/questions/{qid}/trace", headers=h)).json()["events"]
     approved = next(e for e in trace if e["event"] == "interpretation_approved")
     assert approved["details"]["use_synonyms"] is False
+
+
+# ── "How this search was built" report ──────────────────────────────────────
+
+
+async def test_search_report_shows_what_was_approved_and_run(client, engine_api, monkeypatch):
+    import asyncio
+
+    from clinical_engine.orchestrator import tasks as task_mod
+    from core.db import Collections, get_db
+
+    monkeypatch.setattr(settings, "RETRIEVAL_ADAPTER", "legacy_pipeline")
+    created: list[str] = []
+
+    async def start(user_id, inputs, concept_plan=None):
+        """Stand-in for the pipeline: store the session with its plan, the queries the
+        pipeline would run from it, and three papers with their provenance."""
+        sid = f"report-{uuid.uuid4().hex}"
+        created.append(sid)
+        db = get_db()
+        await db[Collections.SEARCH_SESSIONS].insert_one({
+            "id": sid, "user_id": user_id, "status": "awaiting_selection", "original_question": inputs["question"],
+            "deleted_at": None, "created_at": store.now(), "engine_concept_plan": concept_plan})
+        plan = ecp.validate_plan(concept_plan)
+        for rec in ecp.build_queries(plan, ["pubmed", "europe_pmc"]):
+            await db[Collections.SEARCH_QUERIES].insert_one({
+                "id": uuid.uuid4().hex, "search_session_id": sid, "source": rec["source"],
+                "query_family": rec["query_family"], "query_string": rec["query_string"],
+                "planner_source": rec["planner_source"], "is_fallback_strategy": False, "created_at": store.now()})
+        for i, (families, sources, excl) in enumerate([
+            (["cb_mesh_keyword", "cb_study_type_filtered"], ["pubmed", "europe_pmc"], None),
+            (["cb_mesh_keyword"], ["pubmed"], None),
+            (["cb_guideline_review"], ["europe_pmc"], "off-topic"),
+        ]):
+            await db[Collections.SEARCH_SESSION_ARTICLES].insert_one({
+                "id": uuid.uuid4().hex, "search_session_id": sid, "article_id": f"a{i}",
+                "query_types_matched": families, "sources_present": sources, "exclusion_reason": excl})
+        return sid
+
+    monkeypatch.setattr(task_mod, "_start_legacy_session", start)
+    h = await _signup(client)
+    view = (await client.post(f"{BASE}/questions", headers=h,
+                              json={"text": "Is whole blood transfusion effective for survival in hemorrhagic shock?"})).json()
+    qid = view["question_id"]
+    view = (await client.post(f"{BASE}/questions/{qid}/approve-interpretation", headers=h, json={"version": 1})).json()
+    shock = next(c for c in view["search_terms"]["concepts"] if c["term"] == "hemorrhagic shock")
+    view = (await client.post(f"{BASE}/questions/{qid}/search-terms/revise", headers=h, json={
+        "version": 1, "base_terms_version": 1,
+        "edits": [{"op": "add_term", "concept_id": shock["id"], "text": "haemorrhagic shock"}]})).json()
+    await client.post(f"{BASE}/questions/{qid}/confirm", headers=h,
+                      json={"version": 1, "mode": "review_papers", "search_terms_version": 2})
+    for _ in range(200):
+        if created:
+            break
+        await asyncio.sleep(0.05)
+    sid = created[0]
+
+    r = await client.get(f"{BASE}/sessions/{sid}/report", headers=h)
+    assert r.status_code == 200, r.text
+    rep = r.json()
+    assert rep["question_id"] == qid and rep["plan_matches_approval"] is True
+    q = rep["question"]
+    assert q["framework_label"] == "PICO" and q["version"] == 1
+    assert any(f["label"] == "Treatment" and "whole blood transfusion" in f["values"] for f in q["fields"])
+    terms = rep["search_terms"]
+    assert terms["version"] == 2
+    t_shock = next(c for c in terms["concepts"] if c["term"] == "hemorrhagic shock")
+    assert t_shock["mesh"]["descriptor"] == "Shock, Hemorrhagic"
+    assert t_shock["mesh"]["url"] == "https://meshb.nlm.nih.gov/record/ui?ui=D012771"
+    assert {"text": "haemorrhagic shock", "kind": "equivalent", "source": "user"} in t_shock["included"]
+    # Boolean logic = the stored plan: MeSH OR words per required concept, AND-ed.
+    blocks = {b["term"]: b for b in rep["boolean"]["blocks"]}
+    assert blocks["hemorrhagic shock"]["mesh"] == "Shock, Hemorrhagic"
+    assert blocks["hemorrhagic shock"]["words"] == ["hemorrhagic shock", "haemorrhagic shock"]
+    assert "whole blood transfusion" in blocks
+    # Searches = the executed query strings, grouped by family, with open links.
+    fams = {f["family"]: f for f in rep["searches"]}
+    assert rep["searches"][0]["family"] == "mesh_keyword" and fams["mesh_keyword"]["label"] == "Main search"
+    main_pm = next(x for x in fams["mesh_keyword"]["queries"] if x["source"] == "pubmed")
+    assert '"Shock, Hemorrhagic"[MeSH Terms]' in main_pm["query"] and '"haemorrhagic shock"[tiab]' in main_pm["query"]
+    assert main_pm["open_url"].startswith("https://pubmed.ncbi.nlm.nih.gov/?term=%28%28")
+    assert fams["mesh_keyword"]["papers_found"] == 2 and fams["guideline_review"]["papers_found"] == 1
+    res = rep["results"]
+    assert res["unique_papers"] == 3 and res["excluded"] == 1 and res["kept"] == 2
+    # Same as the results list: only 2 kept (<= 20), so the excluded one is shown as a broader match.
+    assert res["shown"] == 3 and res["broader_shown"] == 1
+    # The outcome need not appear, but it narrows the "Main search + outcomes" search.
+    outcome = next(b for b in rep["boolean"]["ranking_only"] if b["role"] == "outcome")
+    assert outcome["in_outcome_search"] is True and "high_precision" in fams
+    assert any(outcome["words"][0] in x["query"] for x in fams["high_precision"]["queries"])
+    assert res["sources"]["pubmed"]["papers_found"] == 2 and res["sources"]["europe_pmc"]["papers_found"] == 2
+    assert res["sources"]["pubmed"]["records_read_per_query"] == 50
+    assert rep["json"]["search_plan"]["terms_hash"] and rep["json"]["question_map"]["framework"] == "PICO"
+    assert rep["live_counts"] is None
+
+    # Live counts re-run the executed main queries (faked here).
+    async def fake_counts(preview, **kw):
+        assert preview["pubmed"] == main_pm["query"]
+        return {"pubmed": 88, "europe_pmc": 73}
+
+    monkeypatch.setattr("clinical_engine.report.hit_counts", fake_counts)
+    live = (await client.get(f"{BASE}/sessions/{sid}/report?live_counts=true", headers=h)).json()["live_counts"]
+    assert live == {"pubmed": 88, "europe_pmc": 73}
+
+    # Owner only; a search that did not come from the review has no report.
+    other = await _signup(client)
+    assert (await client.get(f"{BASE}/sessions/{sid}/report", headers=other)).status_code == 404
+    assert (await client.get(f"{BASE}/sessions/no-such-session/report", headers=h)).status_code == 404
+    await runner.shutdown()

@@ -11,7 +11,7 @@ from typing import Any, Awaitable, Literal, Optional, TypeVar
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from clinical_engine import ENGINE_VERSION, questions
+from clinical_engine import ENGINE_VERSION, questions, report
 from clinical_engine.config import settings
 from clinical_engine.contracts.question import AGE_GROUPS
 from clinical_engine.gateway import ModelGateway
@@ -191,6 +191,18 @@ async def control_run(run_id: str, action: Literal["pause", "resume", "cancel"],
 @router.get("/runs/{run_id}/trace", dependencies=[Depends(_enabled)])
 async def run_trace(run_id: str, current_user: dict = Depends(get_current_user)):
     return await _call(questions.run_trace(current_user, run_id))
+
+
+@router.get("/sessions/{session_id}/report", dependencies=[Depends(_enabled)])
+async def search_report(session_id: str, live_counts: bool = Query(False),
+                        current_user: dict = Depends(get_current_user)):
+    """How a search from approved terms was built: question understanding, MeSH and
+    wordings, the boolean searches actually run, and what they found. 404 for searches
+    that did not come from the question review."""
+    built = await report.build_report(current_user, session_id, live_counts=live_counts)
+    if built is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "No search report for this search."})
+    return built
 
 
 @router.get("/evidence-sets/{set_id}", dependencies=[Depends(_enabled)])

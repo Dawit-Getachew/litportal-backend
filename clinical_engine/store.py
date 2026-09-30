@@ -52,6 +52,7 @@ async def ensure_indexes() -> None:
         (RUNS, [("id", ASCENDING)], {"unique": True, "name": "er_id"}),
         (RUNS, [("question_id", ASCENDING), ("created_at", DESCENDING)], {"name": "er_q_created"}),
         (RUNS, [("status", ASCENDING), ("updated_at", ASCENDING)], {"name": "er_status_updated"}),
+        (RUNS, [("links.search_session_id", ASCENDING)], {"name": "er_session"}),
         (TASKS, [("id", ASCENDING)], {"unique": True, "name": "et_id"}),
         (TASKS, [("idempotency_key", ASCENDING)], {"unique": True, "name": "et_idem"}),
         (TASKS, [("run_id", ASCENDING), ("seq", ASCENDING)], {"name": "et_run_seq"}),
@@ -184,6 +185,14 @@ async def get_run(run_id: str, user_id: Optional[str] = None) -> Optional[dict]:
     if user_id is not None:
         q["user_id"] = user_id
     return await _db()[RUNS].find_one(q, _P)
+
+
+async def get_run_for_session(session_id: str, user_id: str) -> Optional[dict]:
+    """The owner's engine run that started this search session (latest first)."""
+    cur = _db()[RUNS].find({"links.search_session_id": session_id, "user_id": user_id}, _P) \
+        .sort("created_at", DESCENDING).limit(1)
+    runs = [d async for d in cur]
+    return runs[0] if runs else None
 
 
 async def update_run(run_id: str, set_fields: dict, *, expect: Optional[dict] = None,

@@ -78,6 +78,7 @@ existing pipeline on the question text.
 | POST | `/runs/{id}/pause` \| `/resume` \| `/cancel` | Run control |
 | GET | `/runs/{id}/trace` | Run trace |
 | GET | `/evidence-sets/{id}` | AuthorizedEvidenceSet (answer-for-me) |
+| GET | `/sessions/{session_id}/report?live_counts=` | "How this search was built": approved question reading, MeSH + wordings, the boolean logic handed to the search, every executed query (exact strings + open-in-PubMed/Europe PMC links), papers found per search family / source, raw JSON. 404 for searches not started from the review. `live_counts=true` re-runs the executed main queries as counts |
 
 Errors: `404 {code:not_found}`, `409 {code, message}` (state conflicts), `422 {code, message}`
 (input, PHI in edits). Question view example (abridged):
