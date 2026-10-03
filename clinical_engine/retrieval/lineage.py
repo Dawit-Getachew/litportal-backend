@@ -6,7 +6,8 @@ From the admitted guidelines and reviews:
   summary) is ONE work; the extra records are listed under it;
 * issuer — matched against the (proposed) issuer registry;
 * family — editions of the same issuer on the same topic (adult and paediatric
-  guidelines are different families);
+  guidelines are different families); without a known issuer, only editions of
+  one guideline series (near-identical titles) — one body never supersedes another;
 * focused updates — linked to the edition they update when the record says so
   ("update to the 2017 guideline…"); a focused update changes some
   recommendations, it does not replace the whole guideline;
@@ -14,8 +15,9 @@ From the admitted guidelines and reviews:
   editions are superseded by it; one society never supersedes another;
 * currency — soft five-year window measured back from the newest comparable
   applicable guideline (not from today); older guidelines stay when justified
-  (parent of a current focused update, the only guideline from their issuer);
-  the window is not applied to reviews;
+  (parent of a current focused update; the only guideline in the results that
+  addresses the asked treatment specifically); the window is not applied to
+  reviews;
 * search cutoffs — read from the abstract ("searched … to March 2023") and
   verified by quoting the sentence; they — not publication dates — anchor the
   update search for newer evidence.
@@ -195,9 +197,11 @@ def build(pubs: list[dict[str, Any]]) -> dict[str, Any]:
         if not placed:
             for fam in families:
                 f_ids = {i.id for f in fam for i in f["issuers"]}
-                same_issuer = bool(ids & f_ids) or (not ids and not f_ids)
-                if same_issuer and fam[0]["pediatric"] == ed["pediatric"] and \
-                        max(_jaccard(ed["topic"], f["topic"]) for f in fam) >= 0.45:
+                # Same issuer and a similar topic; with no known issuer on either side only
+                # a near-identical title (the same guideline series) — never two bodies.
+                need = 0.45 if ids & f_ids else 0.7 if not ids and not f_ids else None
+                if need is not None and fam[0]["pediatric"] == ed["pediatric"] and \
+                        max(_jaccard(ed["topic"], f["topic"]) for f in fam) >= need:
                     fam.append(ed)
                     placed = True
                     break
@@ -207,10 +211,12 @@ def build(pubs: list[dict[str, Any]]) -> dict[str, Any]:
     # 3. Status within each family; 4. currency window across families.
     newest_applicable = max((e["year"] for e in edition_docs
                              if e["lead"]["admission"]["state"] in ("direct", "broad_answering")), default=None)
-    by_issuer: dict[str, int] = {}
-    for e in edition_docs:
-        for i in e["issuers"]:
-            by_issuer[i.id] = by_issuer.get(i.id, 0) + 1
+
+    def applicable(e: dict[str, Any]) -> bool:
+        return e["lead"]["admission"]["state"] in ("direct", "broad_answering")
+
+    def specific(e: dict[str, Any]) -> bool:  # its title names the asked treatment / test / exposure
+        return bool(((e["lead"].get("admission") or {}).get("signals") or {}).get("names_intervention"))
     family_out = []
     for fi, fam in enumerate(families):
         full = sorted([e for e in fam if not e["focused_update"]], key=lambda e: e["year"])
@@ -234,13 +240,15 @@ def build(pubs: list[dict[str, Any]]) -> dict[str, Any]:
                 currency = "superseded"
             elif newest_applicable and e["year"] < newest_applicable - 5:
                 updated_by = [u for u in updates if u["parent_year"] == e["year"]]
-                only = all(by_issuer.get(i.id, 0) <= 1 for i in e["issuers"]) and e["issuers"]
+                most_specific = specific(e) and not any(
+                    x["year"] > e["year"] and applicable(x) and specific(x) for x in edition_docs)
                 if updated_by:
                     currency = "current"
                     note = f"Kept: updated by the {updated_by[-1]['year']} focused update."
-                elif only:
+                elif most_specific:
                     currency = "current"
-                    note = "Kept despite its age: the only guideline from this issuer in the results."
+                    note = ("Kept despite its age: no newer guideline in these results addresses the asked "
+                            "treatment specifically.")
                 else:
                     currency = "older_than_window"
                     note = (f"More than five years older than the newest comparable guideline "

@@ -76,9 +76,29 @@ FEED_LABELS = {
 }
 
 
+# A national society whose name contains a registry issuer's name is a different
+# organisation ("Chinese Society of Critical Care Medicine" is not SCCM).
+_NATIONAL = frozenset("""
+    chinese japanese korean taiwanese thai indonesian malaysian singaporean vietnamese filipino indian pakistani
+    iranian saudi arab turkish israeli egyptian nigerian african asian german french italian spanish portuguese
+    dutch belgian swiss austrian polish czech hungarian romanian greek russian ukrainian danish swedish norwegian
+    finnish nordic scandinavian british irish scottish canadian mexican brazilian argentine argentinian chilean
+    colombian peruvian latin australian zealand
+""".split())
+
+
+def _named(alias: str, low: str) -> bool:
+    for m in re.finditer(alias, low):
+        before = low[:m.start()].split()
+        if before and before[-1].strip("(\"'") in _NATIONAL:
+            continue
+        return True
+    return False
+
+
 def match_issuers(text: str) -> list[Issuer]:
     low = (text or "").lower()
-    return [i for i in ISSUERS if any(re.search(a, low) for a in i.aliases)]
+    return [i for i in ISSUERS if any(_named(a, low) for a in i.aliases)]
 
 
 def issuer(issuer_id: str) -> Optional[Issuer]:
