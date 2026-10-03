@@ -692,6 +692,11 @@ async def test_search_report_shows_what_was_approved_and_run(client, engine_api,
                 "id": uuid.uuid4().hex, "search_session_id": sid, "source": rec["source"],
                 "query_family": rec["query_family"], "query_string": rec["query_string"],
                 "planner_source": rec["planner_source"], "is_fallback_strategy": False, "created_at": store.now()})
+        # The pipeline records the evaluator's rescue plan without running it.
+        await db[Collections.SEARCH_QUERIES].insert_one({
+            "id": uuid.uuid4().hex, "search_session_id": sid, "source": "pubmed", "query_family": "rescue_query",
+            "query_string": '"hemorrhagic shock"[tiab]', "planner_source": "rescue", "is_fallback_strategy": False,
+            "triggered_by": "retrieval_evaluator", "created_at": store.now()})
         for i, (families, sources, excl) in enumerate([
             (["cb_mesh_keyword", "cb_study_type_filtered"], ["pubmed", "europe_pmc"], None),
             (["cb_mesh_keyword"], ["pubmed"], None),
@@ -720,7 +725,12 @@ async def test_search_report_shows_what_was_approved_and_run(client, engine_api,
         await asyncio.sleep(0.05)
     sid = created[0]
 
-    r = await client.get(f"{BASE}/sessions/{sid}/report", headers=h)
+    # The run is linked to the session only after the (fake) pipeline start returns.
+    for _ in range(200):
+        r = await client.get(f"{BASE}/sessions/{sid}/report", headers=h)
+        if r.status_code == 200:
+            break
+        await asyncio.sleep(0.05)
     assert r.status_code == 200, r.text
     rep = r.json()
     assert rep["question_id"] == qid and rep["plan_matches_approval"] is True
@@ -755,6 +765,13 @@ async def test_search_report_shows_what_was_approved_and_run(client, engine_api,
     assert any(outcome["words"][0] in x["query"] for x in fams["high_precision"]["queries"])
     assert res["sources"]["pubmed"]["papers_found"] == 2 and res["sources"]["europe_pmc"]["papers_found"] == 2
     assert res["sources"]["pubmed"]["records_read_per_query"] == 50
+    # A drafted recovery search is listed as not run, never as a search that ran.
+    assert "rescue_query" not in fams
+    assert rep["not_run"] == [{"source": "pubmed", "source_label": "PubMed", "family": "rescue_query",
+                               "query": '"hemorrhagic shock"[tiab]'}]
+    assert res["sources"]["pubmed"]["queries_run"] == len(
+        [x for f in rep["searches"] for x in f["queries"] if x["source"] == "pubmed"])
+    assert [q["executed"] for q in rep["json"]["queries"]].count(False) == 1
     assert rep["json"]["search_plan"]["terms_hash"] and rep["json"]["question_map"]["framework"] == "PICO"
     assert rep["live_counts"] is None
 

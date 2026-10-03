@@ -34,9 +34,16 @@ FAMILY_INFO: dict[str, tuple[str, str]] = {
     "recent_title_abstract": ("Last 5 years", "The main search limited to the last 5 years."),
     "cochrane_review": ("Cochrane reviews", "The main search within the Cochrane Database of Systematic Reviews "
                                             "(PubMed-indexed)."),
-    "rescue_query": ("Recovery search", "Run automatically when the main searches found too little."),
+    "rescue_query": ("Recovery search", "Drafted when the top results missed a required concept."),
 }
 _FAMILY_ORDER = list(FAMILY_INFO)
+
+
+def _not_run(q: dict) -> bool:
+    """services/pipeline.py records the evaluator's rescue plan in search_queries
+    without running it (OA_RESCUE_RETRIEVAL_ENABLED is not implemented), so those
+    rows are drafts, not searches."""
+    return q.get("planner_source") == "rescue"
 
 
 def _per_query_cap(source: str) -> int:
@@ -179,8 +186,9 @@ async def build_report(user: dict, session_id: str, *, live_counts: bool = False
             fam = qt[3:] if qt.startswith("cb_") else qt
             found_by_family[fam] = found_by_family.get(fam, 0) + 1
 
+    executed = [q for q in query_rows if not _not_run(q)]
     families: dict[str, dict[str, Any]] = {}
-    for q in query_rows:
+    for q in executed:
         fam = q.get("query_family") or "other"
         label, description = FAMILY_INFO.get(fam, (fam.replace("_", " ").capitalize(), ""))
         entry = families.setdefault(fam, {
@@ -196,10 +204,10 @@ async def build_report(user: dict, session_id: str, *, live_counts: bool = False
     ordered = sorted(families.values(), key=lambda f: (_FAMILY_ORDER.index(f["family"])
                                                        if f["family"] in _FAMILY_ORDER else 99))
 
-    sources = sorted({q.get("source") or "europe_pmc" for q in query_rows})
+    sources = sorted({q.get("source") or "europe_pmc" for q in executed})
     per_source = {s: {
         "label": SOURCE_LABELS.get(s, s),
-        "queries_run": sum(1 for q in query_rows if (q.get("source") or "europe_pmc") == s),
+        "queries_run": sum(1 for q in executed if (q.get("source") or "europe_pmc") == s),
         "records_read_per_query": _per_query_cap(s),
         "papers_found": sum(1 for a in articles if s in (a.get("sources_present") or [])),
     } for s in sources}
@@ -230,6 +238,11 @@ async def build_report(user: dict, session_id: str, *, live_counts: bool = False
         "boolean": (_boolean_section(plan, outcome_search_ran="high_precision" in families)
                     if plan else None),
         "searches": ordered,
+        # Drafted but never sent to a source (see _not_run).
+        "not_run": [{"source": q.get("source") or "europe_pmc",
+                     "source_label": SOURCE_LABELS.get(q.get("source") or "europe_pmc", q.get("source")),
+                     "family": q.get("query_family"), "query": q.get("query_string") or ""}
+                    for q in query_rows if _not_run(q)],
         "results": {
             "sources": per_source,
             "unique_papers": len(articles),
@@ -245,6 +258,6 @@ async def build_report(user: dict, session_id: str, *, live_counts: bool = False
             "search_terms": terms.model_dump(mode="json") if terms is not None else None,
             "search_plan": plan,
             "queries": [{"source": q.get("source"), "family": q.get("query_family"),
-                         "query": q.get("query_string")} for q in query_rows],
+                         "query": q.get("query_string"), "executed": not _not_run(q)} for q in query_rows],
         },
     }
