@@ -234,6 +234,19 @@ def test_default_on_is_conservative():
     assert default_on("equivalent", "quick Sequential Organ Failure Assessment", "qSOFA", "model")
     assert not default_on("equivalent", "SOFA score", "qSOFA", "model")
     assert is_head_preserving_shortening("blood transfusion", wb)
+    # The act of giving is not part of the concept: "steroid therapy" = "steroid administration".
+    assert default_on("equivalent", "steroid therapy", "steroid administration", "model")
+    assert not default_on("equivalent", "glucocorticoid therapy", "steroid administration", "model")
+    assert not default_on("equivalent", "whole blood administration", wb, "model")
+    assert not default_on("equivalent", "steroid", "steroid administration", "model")  # the bare product
+
+
+def test_mesh_lookup_forms_drop_the_act_of_giving_last():
+    from clinical_engine.search_terms import mesh
+
+    assert mesh.variants("steroid administration") == ["steroid administration", "steroid"]
+    assert mesh.variants("fluid therapy")[0] == "fluid therapy"  # the whole phrase is tried first
+    assert mesh.variants("whole blood transfusion") == ["whole blood transfusion"]
 
 
 def test_model_output_is_validated():

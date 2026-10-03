@@ -116,6 +116,12 @@ class FakeSources:
             if request.method == "POST":
                 params.update({k: v[0] for k, v in parse_qs(request.content.decode()).items()})
             term = params.get("term", "")
+            uid = re.search(r"\s+AND\s+(\d+)\[uid\]\s*$", term)
+            if uid:  # "(<query>) AND <pmid>[uid]": does the query match this record?
+                inner = term[:uid.start()]
+                rec = self.by_pmid(uid.group(1))
+                ok = rec is not None and (inner == "(all[sb])" or _match(rec, inner))
+                return httpx.Response(200, json={"esearchresult": {"count": "1" if ok else "0", "idlist": []}})
             hits = [r.pmid for r in self.records if _match(r, term)]
             start, size = int(params.get("retstart", 0)), int(params.get("retmax", 20))
             return httpx.Response(200, json={"esearchresult": {

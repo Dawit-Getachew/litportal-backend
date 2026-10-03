@@ -84,6 +84,35 @@ def test_original_wording_skips_negation_and_alternatives_are_bounded():
     assert years["edits"] == [{"op": "set_publication_years", "years": 0}]
 
 
+def test_switched_off_same_meaning_wordings_are_flagged_and_offered_first():
+    plan = ecp.validate_plan({**PLAN, "concepts": [
+        PLAN["concepts"][0],
+        {"id": "c2", "role": "intervention", "term": "central line placement", "required": True, "mesh": None,
+         "synonyms": [], "off_equivalents": [{"id": "t1", "text": "central venous catheterization"},
+                                             {"id": "t2", "text": "CVC placement"}]},
+    ]})
+    pf = portfolio.build(plan, "What is the risk of pneumothorax after central line placement in septic shock?")
+    alt = pf["alternative"]
+    assert "same-meaning" in alt["reason"] and "'central venous catheterization'" in alt["reason"]
+    assert alt["edits"] == [{"op": "set_term_enabled", "concept_id": "c2", "term_id": "t1", "enabled": True},
+                            {"op": "set_term_enabled", "concept_id": "c2", "term_id": "t2", "enabled": True}]
+    # With an offered broader heading too, one alternative adds both (the heading recovers most).
+    sah = ecp.validate_plan({**PLAN, "concepts": [
+        {"id": "s1", "role": "condition", "term": "acute subarachnoid hemorrhage", "required": True, "mesh": None,
+         "broader_mesh": "Subarachnoid Hemorrhage", "synonyms": [], "off_equivalents": [{"id": "t9", "text": "acute SAH"}]},
+        {"id": "s2", "role": "intervention", "term": "milrinone", "required": True, "mesh": "Milrinone", "synonyms": []},
+    ]})
+    alt = portfolio.build(sah, "What is the dose of milrinone for acute subarachnoid hemorrhage?")["alternative"]
+    assert alt["edits"] == [{"op": "set_mesh_enabled", "concept_id": "s1", "enabled": True},
+                            {"op": "set_term_enabled", "concept_id": "s1", "term_id": "t9", "enabled": True}]
+    assert "'Subarachnoid Hemorrhage'" in alt["reason"]
+    pm = next(s for s in pf["specs"] if s.family == "alternative" and s.source == "pubmed")
+    assert '"central venous catheterization"[tiab]' in pm.query and '"Shock, Septic"[MeSH Terms]' in pm.query
+    report = press.check(plan, pf, pubmed_main={"count": 400, "translation": "x", "warnings": [], "errors": []})
+    tw = next(d for d in report["domains"] if d["key"] == "text_words")
+    assert tw["status"] == "warn" and any("switched off" in c["text"] for c in tw["checks"])
+
+
 def test_press_syntax_problems():
     assert press.syntax_problems('("a"[tiab] AND "b"[tiab]', "pubmed") == ["unclosed parenthesis"]
     assert "unbalanced quotation marks" in press.syntax_problems('("a[tiab])', "pubmed")
@@ -196,6 +225,60 @@ async def test_source_outage_is_partial_not_zero(client):
     assert not any(q["status"] == "zero" for q in ledger)  # an outage never looks like "no results"
 
 
+def _spec(i: str, query: str, max_records: int):
+    from clinical_engine.retrieval.run import QuerySpec
+
+    return QuerySpec(id=f"t:{i}", lane="foundational_primary", family="main", source="pubmed", query=query,
+                     purpose="test", max_records=max_records)
+
+
+BOTH = '("septic shock"[tiab]) AND ("hydrocortisone"[tiab])'  # 9 of RECORDS
+
+
+async def test_reading_limit_is_planned_not_an_outage(client, monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_MAX_RECORDS_PUBMED", 6)
+    monkeypatch.setattr(settings, "RETRIEVAL_CONCURRENCY_PER_SOURCE", 3)
+    run_id = "t-" + uuid.uuid4().hex[:8]
+    states = await run_portfolio(run_id, [_spec("a", BOTH, 4), _spec("b", BOTH, 4), _spec("c", BOTH, 4)],
+                                 transport=FakeSources(RECORDS).transport)
+    ledger = {q["spec_id"]: q for q in await store.queries_for_run(run_id)}
+    assert ledger["t:a"]["records_read"] + ledger["t:b"]["records_read"] == 6
+    # The query left out at the limit is in the ledger with the reason — and the source is not "partial".
+    assert ledger["t:c"]["status"] == "skipped" and ledger["t:c"]["error"] == "source_record_budget"
+    assert states["pubmed"]["status"] == "complete"
+
+
+async def test_unused_reading_budget_is_handed_back_before_skipping(client, monkeypatch):
+    monkeypatch.setattr(settings, "RETRIEVAL_MAX_RECORDS_PUBMED", 12)
+    monkeypatch.setattr(settings, "RETRIEVAL_CONCURRENCY_PER_SOURCE", 3)
+    run_id = "t-" + uuid.uuid4().hex[:8]
+    one_hit = '("septic shock"[tiab]) AND ("post hoc subgroup"[tiab])'  # 1 record
+    # a reserves 10 and reads 1, b takes the last 2: c must wait for a's 9, not be skipped.
+    states = await run_portfolio(run_id, [_spec("a", one_hit, 10), _spec("b", BOTH, 10), _spec("c", BOTH, 10)],
+                                 transport=FakeSources(RECORDS).transport)
+    ledger = {q["spec_id"]: q for q in await store.queries_for_run(run_id)}
+    assert [ledger[k]["status"] for k in ("t:a", "t:b", "t:c")] == ["ok", "ok", "ok"]
+    assert ledger["t:c"]["records_read"] == 9 and states["pubmed"]["status"] == "complete"
+    assert sum(q["records_read"] for q in ledger.values()) <= 12
+
+
+async def test_stage_trace_names_where_each_reference_was_lost(client):
+    from clinical_engine.retrieval import trace
+
+    extra = Rec("113", "Vasopressin in septic shock", "Septic shock; vasopressin infusion; mortality.")
+    fake = FakeSources(RECORDS + [extra])
+    run_id = "t-" + uuid.uuid4().hex[:8]
+    # Read only the first 3 of the 9 records this query matches.
+    await run_portfolio(run_id, [_spec("main", BOTH, 3)], transport=fake.transport)
+    await union.build(run_id)
+    refs = [{"pmid": "100"}, {"pmid": "108"}, {"pmid": "113"}, {"pmid": "424242"}]
+    by = {t["pmid"]: t for t in await trace.trace(run_id, refs, plan=PLAN, transport=fake.transport)}
+    assert by["100"]["retrieved"][0]["rank"] == 1 and by["100"]["publication_id"]
+    assert by["108"]["lost_at"] == "reading_limit" and "beyond the 3 records read of 9" in by["108"]["detail"]
+    assert by["113"]["lost_at"] == "query" and by["113"]["concepts_missing"] == ["corticosteroids"]
+    assert by["424242"]["lost_at"] == "not_in_pubmed"
+
+
 async def test_rate_limit_retry_after_is_honoured(client):
     seen = {"n": 0}
 
@@ -281,6 +364,37 @@ def test_policy_state_rules():
     assert ps(dims(intervention="na"), "direct", None) == ("indirect", None)
     assert ps(dims(intervention="na"), "direct", None, na_intervention_ok=True) == ("direct", None)
     assert ps(dims(), "excluded", "not_a_study") == ("excluded", "not_a_study")
+    # A surrogate outcome is not a direct answer; an outcome that could not be judged never
+    # makes a paper stronger than the model's own call (but never weaker either).
+    assert ps(dims(outcome="related"), "direct", None) == ("supportive", None)
+    assert ps(dims(outcome="related"), "direct", None, guideline=True) == ("direct", None)  # recommends, no results
+    assert ps(dims(outcome="unclear"), "indirect", None) == ("indirect", None)
+    assert ps(dims(outcome="unclear"), "uncertain", None) == ("uncertain", None)
+    assert ps(dims(outcome="unclear"), "direct", None) == ("direct", None)
+    assert ps(dims(comparison="unclear"), "supportive", None, comparator_stated=False) == ("direct", None)
+    assert ps(dims(comparison="unclear"), "indirect", None, comparator_stated=True) == ("indirect", None)
+    # Labels say "answers" but the model's own call is indirect / excluded → uncertain, not an answer.
+    assert ps(dims(intervention="narrower"), "indirect", None) == ("uncertain", None)
+    assert ps(dims(), "excluded", "wrong_comparison") == ("uncertain", None)
+    # "na" on an element the question states = the paper does not address it (no patients).
+    no_patients = dims(population="na", condition="na", comparison="na", outcome="na", setting="na")
+    stated = admission.stated_dimensions({"condition": ["hemorrhagic shock"], "population": ["trauma patients"],
+                                          "outcome": ["survival"]})
+    assert ps(no_patients, "excluded", "other", stated=stated) == ("excluded", "other")
+    assert ps(dims(population="na"), "direct", None, stated=frozenset({"condition"})) == ("direct", None)
+
+
+def test_record_design_types_make_a_primary_study():
+    def role(types, model_role):
+        pub = {"article": {"title": "Whole blood and survival in injured patients", "publication_types_json": types}}
+        sig = {"role": admission._role(pub)[0], "role_source": "report"}
+        return admission.finalize(sig, {"state": "direct", "role": model_role, "reason": "x"}, method="model")["role"]
+
+    assert role(["Observational Study", "Multicenter Study", "Journal Article"], "other") == "primary_result"
+    assert role(["Randomized Controlled Trial"], None) == "primary_result"
+    assert role(["Comparative Study", "Journal Article"], "other") == "other"  # models and lab work carry it too
+    assert role(["Observational Study"], "secondary_analysis") == "secondary_analysis"  # the model read the abstract
+    assert role(["Historical Article", "Journal Article"], "other") == "narrative_review"
 
 
 # ── W2.3 lineage ────────────────────────────────────────────────────────────
@@ -315,11 +429,32 @@ def test_lineage_editions_focused_update_currency_and_cutoffs():
     assert lin["6"]["status"] == "focused_update" and lin["6"]["family_id"] == lin["5"]["family_id"]
     assert "does not replace the whole guideline" in lin["6"]["note"]
     assert lin["5"]["status"] == "current"
-    assert lin["7"]["currency"] == "current" and "only guideline" in (lin["7"]["note"] or "")  # justified exception
+    assert lin["7"]["currency"] == "older_than_window" and "(2024)" in lin["7"]["note"]
     assert out["newest_comparable_guideline_year"] == 2024
     assert lin["8"]["cutoff"]["date"] == "2023-06-30"
     anchor = lineage.update_anchor(pubs)
     assert anchor["publication_id"] == "8" and anchor["date"] == "2023-06-30"
+
+
+def test_currency_window_keeps_only_justified_older_guidelines():
+    def g(pid, title, year, specific):
+        p = _pub(pid, title, year)
+        p["admission"]["signals"] = {"names_intervention": specific}
+        return p
+
+    pubs = [g("a", "Guidelines on whole blood transfusion in haemorrhagic shock", 2010, True),
+            g("b", "Clinical practice guideline on major trauma haemorrhage management", 2022, False)]
+    lineage.build(pubs)
+    assert pubs[0]["lineage"]["currency"] == "current" and "specifically" in pubs[0]["lineage"]["note"]
+    pubs.append(g("c", "Consensus statement on prehospital whole blood transfusion", 2023, True))
+    for p in pubs:
+        p.pop("lineage", None)
+    lineage.build(pubs)
+    assert pubs[0]["lineage"]["currency"] == "older_than_window"
+    # A national society whose name contains a registry issuer's name is not that issuer.
+    from clinical_engine.retrieval import registry
+    assert not registry.match_issuers("Chinese Society of Critical Care Medicine guidelines (2007)")
+    assert [i.id for i in registry.match_issuers("from the Society of Critical Care Medicine")] == ["sccm"]
 
 
 def test_cutoff_reader_refuses_other_works_dates():
@@ -438,7 +573,8 @@ async def test_full_engine_run_through_the_api(client, engine_api, monkeypatch):
     assert main and all(c["state"] in ("direct", "broad_answering") for c in main)
     assert {c["pmid"] for c in main} >= {"100"}
     assert any(c["role"] == "guideline" and c["lineage"]["currency"] == "current" for c in ev["guidelines"])
-    assert ev["portfolio"]["press"]["summary"] and ev["portfolio"]["queries"][0]["translation"]
+    pm_main = next(q for q in ev["portfolio"]["queries"] if q["source"] == "pubmed" and q["family"] == "main")
+    assert ev["portfolio"]["press"]["summary"] and pm_main["translation"]
     assert all(c["access"]["status"] != "checking" for c in main)
     # The existing session API keeps working on the projected rows.
     legacy = await client.get(f"/api/search-sessions/{sid}", headers=h)
@@ -455,4 +591,38 @@ async def test_full_engine_run_through_the_api(client, engine_api, monkeypatch):
     other = await _signup(client)
     assert (await client.get(f"{BASE}/sessions/{sid}/evidence", headers=other)).status_code == 404
     assert (await client.post(f"{BASE}/sessions/{sid}/evidence/{one}/access/retry", headers=other)).status_code == 404
+    await runner.shutdown()
+
+
+async def test_failed_engine_run_closes_its_session(client, engine_api, monkeypatch):  # noqa: F811
+    from clinical_engine.orchestrator import runner
+    from clinical_engine.orchestrator.tasks import HANDLERS, FatalTaskError
+
+    async def broken_union(ctx):
+        raise FatalTaskError("union_broken")
+
+    http.TEST_TRANSPORT = FakeSources(RECORDS).transport
+    monkeypatch.setattr(settings, "RETRIEVAL_ADAPTER", "engine")
+    monkeypatch.setitem(HANDLERS, "engine_union", broken_union)
+    h = await _signup(client)
+    v = (await client.post(f"{BASE}/questions", headers=h,
+                           json={"text": "In adults with septic shock, do corticosteroids reduce mortality?"})).json()
+    qid = v["question_id"]
+    v = (await client.post(f"{BASE}/questions/{qid}/approve-interpretation", headers=h, json={"version": 1})).json()
+    r = await client.post(f"{BASE}/questions/{qid}/confirm", headers=h,
+                          json={"version": 1, "mode": "review_papers",
+                                "search_terms_version": v["search_terms"]["version"]})
+    run_id = r.json()["run"]["id"]
+    for _ in range(400):
+        run = await store.get_run(run_id)
+        if run["status"] in ("completed", "failed"):
+            break
+        await asyncio.sleep(0.05)
+    assert run["status"] == "failed" and run["error"]["task"] == "union"
+    sid = run["links"]["search_session_id"]
+    # The session it opened does not stay "searching" forever.
+    legacy = await client.get(f"/api/search-sessions/{sid}", headers=h)
+    assert legacy.status_code == 200 and legacy.json()["status"] == "error"
+    ev = (await client.get(f"{BASE}/sessions/{sid}/evidence", headers=h)).json()
+    assert ev["run"]["status"] == "failed" and not ev["listed"]
     await runner.shutdown()
