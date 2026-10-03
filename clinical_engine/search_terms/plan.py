@@ -10,7 +10,6 @@ import httpx
 from clinical_engine.contracts.question import ClinicalQuestionMap
 from clinical_engine.frameworks import FRAMEWORK_LABELS, INTENT_FOR_TYPE
 from clinical_engine.search_terms.contracts import SearchTerms, terms_hash
-from clinical_engine.search_terms.mesh import ESEARCH, _params
 from services.engine_concept_plan import PLAN_VERSION, full_query, validate_plan
 
 logger = logging.getLogger("litportal.clinical_engine.search_plan")
@@ -66,17 +65,20 @@ def query_preview(terms: SearchTerms, cqm: ClinicalQuestionMap) -> dict[str, Opt
     return {"pubmed": full_query(plan, "pubmed") or None, "europe_pmc": full_query(plan, "europe_pmc") or None}
 
 
+# Counts go through the engine's source client: one rate limit per source host
+# (shared with the search-plan preview and retrieval, which run at the same
+# moment in step 2) and 429/5xx retries — a burst no longer shows "?".
 async def _pubmed_count(client: httpx.AsyncClient, query: str) -> Optional[int]:
-    params = {**_params(term=query, rettype="count"), "db": "pubmed"}
-    resp = await client.get(ESEARCH, params=params)
-    resp.raise_for_status()
-    return int((resp.json().get("esearchresult") or {}).get("count"))
+    from clinical_engine.retrieval import pubmed as pubmed_src
+
+    return (await pubmed_src.esearch(client, query, retmax=0)).count
 
 
 async def _epmc_count(client: httpx.AsyncClient, query: str) -> Optional[int]:
-    resp = await client.get(EPMC_SEARCH, params={"query": query, "format": "json", "pageSize": 1,
-                                                 "resultType": "idlist"})
-    resp.raise_for_status()
+    from clinical_engine.retrieval.http import request
+
+    resp = await request(client, "GET", EPMC_SEARCH, host="europepmc",
+                         params={"query": query, "format": "json", "pageSize": 1, "resultType": "idlist"})
     return int(resp.json().get("hitCount"))
 
 
@@ -84,13 +86,15 @@ async def hit_counts(preview: dict[str, Optional[str]], *,
                      transport: Optional[httpx.AsyncBaseTransport] = None) -> dict[str, Optional[int]]:
     """How many records the approved search matches in each source — counts only,
     nothing is retrieved. None when a source could not be reached."""
+    from clinical_engine.retrieval.http import SourceError
+
     async def safe(fn, query: Optional[str]) -> Optional[int]:
         if not query:
             return None
         try:
             return await fn(client, query)
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
-            logger.warning("hit count failed: %s", type(exc).__name__)
+        except (SourceError, httpx.HTTPError, ValueError, TypeError) as exc:
+            logger.warning("hit count failed: %s", getattr(exc, "code", type(exc).__name__))
             return None
 
     async with httpx.AsyncClient(timeout=8.0, transport=transport) as client:
