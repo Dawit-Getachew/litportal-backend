@@ -65,6 +65,17 @@ async def set_session_status(session_id: str, status: str, **extra: Any) -> None
         {"id": session_id}, {"$set": {"status": status, "updated_at": _now(), **extra}})
 
 
+async def close_unfinished_session(session_id: str) -> bool:
+    """A run that ends without listing its results (failed, cancelled or
+    superseded) leaves its session as ``error`` — the existing terminal status —
+    instead of ``searching`` forever. Only a session still searching changes."""
+    from core.db import Collections, get_db
+
+    res = await get_db()[Collections.SEARCH_SESSIONS].update_one(
+        {"id": session_id, "status": "searching"}, {"$set": {"status": "error", "updated_at": _now()}})
+    return res.modified_count == 1
+
+
 async def upsert_article(article: dict[str, Any]) -> tuple[str, list[str]]:
     """(article id, notes). Identity-safe; see the module docstring."""
     from pymongo.errors import DuplicateKeyError

@@ -113,6 +113,7 @@ async def cancel(run: dict, actor: str, reason: str = "cancelled_by_user") -> bo
     if ok:
         n = await store.cancel_open_tasks(run["id"], reason)
         await trace(run, "run_cancelled", actor=actor, reason=reason, open_tasks_cancelled=n)
+        await _close_engine_session(run["id"])
     return ok
 
 
@@ -131,6 +132,7 @@ async def supersede_question_runs(question_id: str, new_version: int, actor: str
             if ok:
                 await store.cancel_open_tasks(run["id"], "superseded_by_new_version")
                 await trace(run, "run_superseded", actor=actor, new_version=new_version)
+                await _close_engine_session(run["id"])
                 count += 1
         elif not run.get("invalidated_by_version"):
             await store.update_run(run["id"], {"invalidated_by_version": new_version})
@@ -154,6 +156,21 @@ def _ready(task: dict, by_key: dict[str, dict], now: datetime) -> bool:
     return nb is None or nb <= now
 
 
+async def _close_engine_session(run_id: str) -> None:
+    """An engine run that ends early must not leave its session "searching"."""
+    run = await store.get_run(run_id)
+    sid = ((run or {}).get("links") or {}).get("search_session_id")
+    if run is None or run.get("retrieval_adapter") != "engine" or not sid:
+        return
+    from clinical_engine.retrieval import projection
+
+    try:
+        if await projection.close_unfinished_session(sid):
+            await trace(run, "session_closed_unfinished", search_session_id=sid, run_status=run.get("status"))
+    except Exception:  # noqa: BLE001 — closing the session is best-effort; the run's own status is authoritative
+        logger.exception("could not close the session of engine run %s", run_id)
+
+
 async def _finish_run(run: dict, status: str, **fields: Any) -> None:
     ok = await store.update_run(run["id"], {"status": status, "finished_at": store.now(), **fields},
                                 expect={"status": {"$nin": list(TERMINAL_RUN_STATUSES)}})
@@ -161,6 +178,8 @@ async def _finish_run(run: dict, status: str, **fields: Any) -> None:
         if status != "completed":
             await store.cancel_open_tasks(run["id"], f"run_{status}")
         await trace(run, f"run_{status}", **{k: v for k, v in fields.items() if "." not in k})
+        if status != "completed":
+            await _close_engine_session(run["id"])
 
 
 async def drive(run_id: str) -> None:
