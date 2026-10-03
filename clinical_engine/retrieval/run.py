@@ -6,7 +6,10 @@
   read, pages, and whether the result was cut at the budget.
 * A failed or timed-out query is ``failed`` / ``skipped`` — never "no results" —
   and the source's status becomes ``partial`` or ``failed``, so an outage is
-  visible as a partial search.
+  visible as a partial search. A planned query left out because the source's
+  reading limit was reached is ``skipped`` with that reason; it is planned
+  behaviour, not an outage, so it does not make the source partial.
+* Every planned query gets a ledger row, including the ones never sent.
 * Each record is stored once per source with every query hit (family, lane and
   rank) that found it.
 """
@@ -165,12 +168,24 @@ async def run_one(client: httpx.AsyncClient, run_id: str, spec: QuerySpec) -> Qu
     return QueryOutcome(spec.id, spec.source, status, ledger["count"], ledger["records_read"], error)
 
 
+async def _ledger_not_sent(run_id: str, spec: QuerySpec, code: str) -> None:
+    """A ledger row for a planned query that was never sent (reading or time limit)."""
+    await store.insert_query({
+        "id": new_id(), "run_id": run_id, "spec_id": spec.id, "lane": spec.lane, "family": spec.family,
+        "source": spec.source, "query": spec.query, "purpose": spec.purpose, "max_records": spec.max_records,
+        "condition": spec.condition, "status": "skipped", "error": code, "count": None, "translation": None,
+        "warnings": [], "errors": [], "records_read": 0, "pages": 0, "truncated": False,
+        "created_at": store.now(), "finished_at": store.now(),
+    })
+
+
 def _source_status(outcomes: list[QueryOutcome], total: int, timed_out: bool) -> str:
     done = [o for o in outcomes if o.status != "skipped"]
     bad = [o for o in done if o.status in ("failed", "partial")]
     if done and len(bad) == len(done) and not any(o.records_read for o in done):
         return "failed"
-    if timed_out or bad or len(done) < total:
+    at_limit = sum(1 for o in outcomes if o.status == "skipped" and o.error == "source_record_budget")
+    if timed_out or bad or len(done) + at_limit < total:
         return "partial"
     return "complete"
 
@@ -190,22 +205,38 @@ async def run_portfolio(run_id: str, specs: list[QuerySpec], *,
         if progress:
             await progress(source, dict(state))
         budget_left = caps[source]
+        in_flight = 0
+        budget = asyncio.Condition()
         sem = asyncio.Semaphore(max(1, settings.RETRIEVAL_CONCURRENCY_PER_SOURCE))
         timed_out = False
 
         async def one(spec: QuerySpec) -> None:
-            nonlocal budget_left
+            nonlocal budget_left, in_flight
             async with sem:
-                if budget_left <= 0:
+                async with budget:
+                    # Queries still running hand back what they did not read; wait for
+                    # them before deciding the source's reading limit is used up.
+                    await budget.wait_for(lambda: budget_left > 0 or in_flight == 0)
+                    at_limit = budget_left <= 0
+                    if not at_limit:
+                        spec.max_records = min(spec.max_records, budget_left)
+                        budget_left -= spec.max_records
+                        in_flight += 1
+                if at_limit:
                     outcomes.append(QueryOutcome(spec.id, source, "skipped", error="source_record_budget"))
                     return
-                spec.max_records = min(spec.max_records, budget_left)
-                budget_left -= spec.max_records
-                if call_tool is not None:
-                    outcome = await call_tool(TOOL_FOR_SOURCE[source], run_one, client, run_id, spec)
-                else:
-                    outcome = await run_one(client, run_id, spec)
-                budget_left += spec.max_records - outcome.records_read  # return what was not used
+                outcome: Optional[QueryOutcome] = None
+                try:
+                    if call_tool is not None:
+                        outcome = await call_tool(TOOL_FOR_SOURCE[source], run_one, client, run_id, spec)
+                    else:
+                        outcome = await run_one(client, run_id, spec)
+                finally:
+                    async with budget:
+                        in_flight -= 1
+                        if outcome is not None:
+                            budget_left += spec.max_records - outcome.records_read  # return what was not used
+                        budget.notify_all()
                 outcomes.append(outcome)
                 state["queries_done"] += 1
                 state["records_read"] += outcome.records_read
@@ -225,6 +256,12 @@ async def run_portfolio(run_id: str, specs: list[QuerySpec], *,
                 ran = {o.spec_id for o in outcomes}
                 outcomes.extend(QueryOutcome(s.id, source, "skipped", error="source_time_budget")
                                 for s in source_specs if s.id not in ran)
+        # Planned queries that were never sent still appear in the ledger, with the reason.
+        logged = {q["spec_id"] for q in await store.queries_for_run(run_id) if q["source"] == source}
+        reasons = {o.spec_id: o.error for o in outcomes if o.status == "skipped"}
+        for s in source_specs:
+            if s.id not in logged:
+                await _ledger_not_sent(run_id, s, reasons.get(s.id) or "source_time_budget")
         state["status"] = _source_status(outcomes, len(source_specs), timed_out)
         state["timed_out"] = timed_out
         state["outcomes"] = [asdict(o) for o in outcomes]

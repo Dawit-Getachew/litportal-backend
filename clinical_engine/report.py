@@ -294,8 +294,8 @@ async def _engine_report(run: dict, version: dict, session: dict, cqm: ClinicalQ
         entry["queries"].append({
             "source": src, "source_label": SOURCE_LABELS.get(src, src), "query": q["query"],
             "open_url": _open_url(src, q["query"]), "planner_source": "engine", "fallback": False,
-            "status": q.get("status"), "count": q.get("count"), "records_read": q.get("records_read"),
-            "max_records": q.get("max_records"), "truncated": q.get("truncated"),
+            "status": q.get("status"), "error": q.get("error"), "count": q.get("count"),
+            "records_read": q.get("records_read"), "max_records": q.get("max_records"), "truncated": q.get("truncated"),
             "translation": q.get("translation"), "warnings": q.get("warnings") or [],
         })
     ordered = list(families.values())
