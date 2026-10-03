@@ -111,7 +111,8 @@ Rules:
   "broad_answering" (or "direct" if it is about this treatment) even if the abstract does not name it. A
   guideline on a different specific topic (e.g. fluids, ultrasound) is excluded as wrong_intervention.
 - A narrative (non-systematic) review — including practical "how to" articles, overviews and expert
-  opinion — is at most "supportive"; give it role "narrative_review".
+  opinion — is at most "supportive" (except for background questions — see "How to read the dimensions");
+  give it role "narrative_review".
 - Read negation carefully ("patients without diabetes" is a different population from diabetes).
 - A secondary, post hoc or subgroup report is at most "supportive" unless the question is about that subgroup.
 - Use the deterministic signals given with each candidate; do not contradict a signal marked "certain".
@@ -140,6 +141,7 @@ TYPE_FAMILY = {
     "screening": "diagnosis", "monitoring": "diagnosis", "harm": "harm", "etiology_risk": "harm",
     "complications": "harm", "prognosis": "prognosis", "prognostic_factor": "prognosis",
     "prediction_model": "prognosis", "qualitative": "qualitative", "epidemiology": "epidemiology",
+    "background": "background", "evidence_map": "background", "other": "background",
 }
 # What each judged dimension means for the question's type (the model labels the
 # same six dimensions for every question; their meaning follows the framework).
@@ -177,6 +179,15 @@ DIMENSION_GUIDE = {
     "epidemiology": {
         "intervention": "'na'", "comparison": "'na'",
         "outcome": "the frequency measure (prevalence, incidence) in the stated population and period",
+    },
+    "background": {
+        "condition": "the condition or topic the question is about",
+        "intervention": "'na' unless the question names a specific test, treatment or exposure",
+        "comparison": "'na'",
+        "outcome": "the aspect asked about (definition, criteria, mechanism, features, course)",
+        "extra": "For this background question a definition or consensus statement, a guideline, or a review "
+                 "(narrative or systematic) that explains the asked aspect is 'direct' — the narrative-review limit "
+                 "does not apply. A study of one treatment or test for the condition is 'indirect'.",
     },
 }
 
@@ -508,7 +519,7 @@ async def judge_batch(gateway: ModelGateway, ctx: dict[str, Any], batch: list[tu
     family = TYPE_FAMILY.get(ctx["question_type"], "treatment")
     return validate_items(res.data, [cid for cid, _, _ in batch],
                           comparator_stated=bool(ctx["elements"].get("comparator")) or not treatment_like,
-                          na_intervention_ok=family in ("prognosis", "epidemiology", "qualitative"),
+                          na_intervention_ok=family in ("prognosis", "epidemiology", "qualitative", "background"),
                           stated=stated_dimensions(ctx["elements"]),
                           roles={cid: sig.get("role") for cid, _, sig in batch}), res
 
@@ -525,7 +536,8 @@ def stated_dimensions(elements: dict[str, list[str]]) -> frozenset[str]:
 # ── Final state ─────────────────────────────────────────────────────────────
 
 
-def finalize(sig: dict[str, Any], judged: Optional[dict[str, Any]], *, method: str) -> dict[str, Any]:
+def finalize(sig: dict[str, Any], judged: Optional[dict[str, Any]], *, method: str,
+             narrative_ok: bool = False, has_abstract: bool = True) -> dict[str, Any]:
     """Combine deterministic signals and the model's judgment. Signals can only
     make the state stricter."""
     if sig.get("certain_exclusion"):
@@ -549,8 +561,12 @@ def finalize(sig: dict[str, Any], judged: Optional[dict[str, Any]], *, method: s
     if out.get("role") == "case_report" and out["state"] in QUALIFYING:
         out.update(state="supportive", reason="Case report — it cannot show the effect on its own. "
                                               + (judged.get("reason") or ""))
-    if out.get("role") == "narrative_review" and out["state"] in QUALIFYING:
+    if out.get("role") == "narrative_review" and out["state"] in QUALIFYING and not narrative_ok:
         out.update(state="supportive", reason="Narrative review (not systematic). " + (judged.get("reason") or ""))
+    if not has_abstract and out["state"] in QUALIFYING and out.get("role") != "guideline":
+        # A title alone is word presence, not a judgment of population, comparison and outcome.
+        out.update(state="uncertain", reason="No abstract — judged on the title only; check the paper. "
+                                             + (judged.get("reason") or ""))
     if sig.get("secondary_of_trial") and out["state"] in QUALIFYING:
         out.update(state="supportive",
                    reason=f"A separate report of trial {sig['secondary_of_trial']}; its main report is listed. "
@@ -583,9 +599,11 @@ def _is_listed(p: dict[str, Any]) -> bool:
     return not lin.get("edition_id") or bool(lin.get("lead"))
 
 
-def assign_sections(pubs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+def assign_sections(pubs: list[dict[str, Any]], *, newest_first: bool = False) -> dict[str, list[dict[str, Any]]]:
     """main (≈15: ≤3 current-first guidelines, ≤5 reviews, then primary studies) /
-    other (≤5) / more / excluded / held_back / not_assessed. One entry per guideline edition."""
+    other (≤5) / more / excluded / held_back / not_assessed. One entry per guideline edition.
+    ``newest_first`` (background questions: definitions and explanations are replaced
+    over time) orders the remaining studies by year before search strength."""
     sections: dict[str, list[dict[str, Any]]] = {k: [] for k in
                                                  ("main", "other", "more", "excluded", "held_back", "not_assessed")}
 
@@ -603,6 +621,8 @@ def assign_sections(pubs: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]
         if role in ("systematic_review", "meta_analysis"):
             # Newest cumulative evidence first (no age window for reviews).
             return (1, state, -year)
+        if newest_first:
+            return (2 + _TYPE_ORDER.get(role, 3), state, -year, -priority(p))
         return (2 + _TYPE_ORDER.get(role, 3), state, -priority(p), -year)
 
     ranked = sorted((p for p in pubs if _is_listed(p)), key=key)
@@ -713,7 +733,9 @@ async def admit(pubs: list[dict[str, Any]], cqm: Any, plan: dict[str, Any], *,
                               "reason": f"Beyond the review budget ({len(judged_ids)} records reviewed, "
                                         "in search-strength order)."}
         else:
-            p["admission"] = finalize(sig, results.get(p["id"]), method=method)
+            p["admission"] = finalize(sig, results.get(p["id"]), method=method,
+                                      narrative_ok=TYPE_FAMILY.get(ctx["question_type"]) == "background",
+                                      has_abstract=bool(((p.get("article") or {}).get("abstract") or "").strip()))
         p["admission"]["signals"] = {k: v for k, v in sig.items() if k != "concepts"}
         p["admission"]["concepts"] = sig["concepts"]
     usage["method"] = method

@@ -185,7 +185,8 @@ async def engine_lineage(ctx: TaskContext) -> dict[str, Any]:
 async def engine_project(ctx: TaskContext) -> dict[str, Any]:
     sid = ctx.outputs["retrieve"]["search_session_id"]
     pubs = await store.publications_for_run(ctx.run["id"])
-    sections = admission.assign_sections(pubs)
+    sections = admission.assign_sections(
+        pubs, newest_first=admission.TYPE_FAMILY.get(ctx.cqm.question_type) == "background")
     result = await projection.project(sid, pubs, sections)
     await projection.set_session_status(sid, "awaiting_selection")
     counts = {k: len(v) for k, v in sections.items()}

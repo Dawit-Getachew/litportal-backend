@@ -384,6 +384,29 @@ def test_policy_state_rules():
     assert ps(dims(population="na"), "direct", None, stated=frozenset({"condition"})) == ("direct", None)
 
 
+def test_background_questions_accept_reviews_and_no_intervention():
+    assert admission.TYPE_FAMILY["background"] == admission.TYPE_FAMILY["evidence_map"] == "background"
+    assert admission.policy_state(dims(intervention="na", comparison="na"), "direct", None,
+                                  na_intervention_ok=True) == ("direct", None)
+    sig = {"role": "narrative_review", "role_source": "report"}
+    judged = {"state": "direct", "role": "narrative_review", "reason": "Explains the definition."}
+    assert admission.finalize(sig, judged, method="model", narrative_ok=True)["state"] == "direct"
+    assert admission.finalize(sig, judged, method="model")["state"] == "supportive"  # effect questions keep the cap
+    # A title alone is not a judgment: no abstract → uncertain (guidelines exempt — many have none in PubMed).
+    plain = {"role": "other", "role_source": "report"}
+    assert admission.finalize(plain, {"state": "direct", "role": "other", "reason": "x"}, method="model",
+                              has_abstract=False)["state"] == "uncertain"
+    gl = {"role": "guideline", "role_source": "pubtype"}
+    assert admission.finalize(gl, {"state": "direct", "role": "guideline", "reason": "x"}, method="model",
+                              has_abstract=False)["state"] == "direct"
+    old = {"id": "o", "article": {"publication_year": 1961}, "admission": {"state": "direct", "role": "other"},
+           "hits": [{"family": "main", "rank": 1}]}
+    new = {"id": "n", "article": {"publication_year": 2024}, "admission": {"state": "direct", "role": "other"},
+           "hits": [{"family": "main", "rank": 40}]}
+    assert [p["id"] for p in admission.assign_sections([old, new], newest_first=True)["main"]] == ["n", "o"]
+    assert [p["id"] for p in admission.assign_sections([old, new])["main"]] == ["o", "n"]  # search strength
+
+
 def test_record_design_types_make_a_primary_study():
     def role(types, model_role):
         pub = {"article": {"title": "Whole blood and survival in injured patients", "publication_types_json": types}}
