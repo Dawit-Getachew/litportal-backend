@@ -316,10 +316,9 @@ async def delegated_selection(ctx: TaskContext) -> dict[str, Any]:
             if len(items) >= limit:
                 break
             a = r.get("article") or {}
-            verdict = can_use_article_for_tool(
-                {"sources_present": r.get("sources_present") or [], "source_ids_json": a.get("source_ids_json")},
-                "summary",
-            )
+            # The whole record (journal, DOI, PMID) so Cochrane reviews are caught
+            # whichever index they came through.
+            verdict = can_use_article_for_tool({**a, "sources_present": r.get("sources_present") or []}, "summary")
             item = EvidenceSetItem(
                 publication_ref=r["id"], article_id=r.get("article_id"), pmid=a.get("pmid"), doi=a.get("doi"),
                 title=a.get("title"), selected_by="policy",

@@ -192,11 +192,11 @@ async def _build_summary_inputs(
 
     # Defensive: drop articles excluded by record (preprint/retracted) AND
     # articles whose SOURCE policy blocks AI summary ingestion (B1/B16 — e.g.
-    # Cochrane / MyHealthfinder-HHS). Ineligible articles NEVER reach the
-    # summarizer; the reason is surfaced on the packet so the caller can
-    # explain the exclusion. Conservative: only gate when the source is known
-    # (so pipeline articles from pubmed/europepmc/etc. are never over-excluded).
-    from services.downstream_eligibility import article_sources, can_use_article_for_tool
+    # Cochrane, including PubMed-indexed Cochrane reviews, or MyHealthfinder-HHS).
+    # Fail-closed: an article with no known source is not summarized (a PMID
+    # counts as PubMed). Ineligible articles NEVER reach the summarizer; the
+    # reason is surfaced on the packet so the caller can explain the exclusion.
+    from services.downstream_eligibility import can_use_article_for_tool
     safe_ids: list[str] = []
     ineligible_articles: list[dict] = []
     for aid in selected_ids:
@@ -205,16 +205,15 @@ async def _build_summary_inputs(
             continue
         if _is_excluded_article_record(art):
             continue
-        if article_sources(art):
-            elig = can_use_article_for_tool(art, "summary")
-            if not elig["allowed"]:
-                ineligible_articles.append({
-                    "article_id": aid,
-                    "source": elig.get("source"),
-                    "reason": elig.get("reason"),
-                    "source_policy_reason": elig.get("source_policy_reason"),
-                })
-                continue
+        elig = can_use_article_for_tool(art, "summary")
+        if not elig["allowed"]:
+            ineligible_articles.append({
+                "article_id": aid,
+                "source": elig.get("source"),
+                "reason": elig.get("reason"),
+                "source_policy_reason": elig.get("source_policy_reason"),
+            })
+            continue
         safe_ids.append(aid)
 
     # Materialize the evidence packet FIRST so lazily-created abstract extracts

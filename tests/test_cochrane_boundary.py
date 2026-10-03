@@ -20,14 +20,16 @@ from routers.summary import _build_summary_inputs
 ABSTRACT = "RCT: the intervention reduced the primary composite endpoint vs placebo."
 
 
-async def _seed_article(db, source: str) -> str:
+async def _seed_article(db, source: str, *, journal: str = "NEJM", pmid: bool = True,
+                        sources: bool = True) -> str:
     aid = f"cb-{source}-" + uuid.uuid4().hex[:8]
     now = datetime.now(timezone.utc)
     await db[Collections.ARTICLES].insert_one({
         "id": aid, "canonical_key": aid, "title": f"Boundary test ({source})",
-        "abstract": ABSTRACT, "journal": "NEJM", "publication_year": 2024,
-        "pmid": uuid.uuid4().hex[:8], "doi": f"10.1/{aid}", "doi_normalized": f"10.1/{aid}",
-        "sources_present": [source], "full_text_status": "abstract_only",
+        "abstract": ABSTRACT, "journal": journal, "publication_year": 2024,
+        "pmid": str(uuid.uuid4().int)[:8] if pmid else None, "doi": f"10.1/{aid}", "doi_normalized": f"10.1/{aid}",
+        "sources_present": [source] if sources else [], "source_ids_json": {},
+        "full_text_status": "abstract_only",
         "is_retracted": False, "is_preprint": False, "created_at": now, "updated_at": now,
     })
     return aid
@@ -76,3 +78,31 @@ async def test_selected_cochrane_record_excluded_from_ai_summary(client):
     assert cochrane in ineligible
     assert ineligible[cochrane]["source"] == "cochrane"
     assert ineligible[cochrane]["reason"] == "cochrane_ai_ingestion_restricted"
+
+
+async def test_pubmed_indexed_cochrane_and_unknown_source_records_fail_closed(client):
+    """A Cochrane review that arrived through PubMed is still Cochrane content, and
+    a record with no known source is not summarized; a PMID-only record is PubMed."""
+    db = get_db()
+    uid = "cb-u-" + uuid.uuid4().hex[:8]
+    sid = "cb-s-" + uuid.uuid4().hex[:8]
+    now = datetime.now(timezone.utc)
+    await db[Collections.SEARCH_SESSIONS].insert_one({
+        "id": sid, "user_id": uid, "status": "awaiting_selection",
+        "original_question": "does the intervention help?",
+        "sanitized_question": "does the intervention help?",
+        "deleted_at": None, "created_at": now, "updated_at": now,
+    })
+    indexed_cochrane = await _seed_article(db, "pubmed", journal="Cochrane Database of Systematic Reviews")
+    unknown = await _seed_article(db, "none", pmid=False, sources=False)
+    pmid_only = await _seed_article(db, "pmidonly", sources=False)
+    for aid in (indexed_cochrane, unknown, pmid_only):
+        await _seed_ssa(db, sid, aid)
+
+    session = await db[Collections.SEARCH_SESSIONS].find_one({"id": sid}, {"_id": 0})
+    selected_studies, _, extracts, packet = await _build_summary_inputs(session=session, user_id=uid, db=db)
+    assert {s["article_id"] for s in selected_studies} == {pmid_only}
+    assert indexed_cochrane not in extracts and unknown not in extracts
+    ineligible = {a["article_id"]: a for a in packet["ineligible_articles"]}
+    assert ineligible[indexed_cochrane]["reason"] == "cochrane_ai_ingestion_restricted"
+    assert ineligible[unknown]["reason"] == "no_source_info_fail_closed"

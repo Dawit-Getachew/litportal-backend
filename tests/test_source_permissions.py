@@ -67,3 +67,28 @@ def test_eligibility_ranker_optimization():
 def test_eligibility_unknown_tool_and_no_source():
     assert not can_use_article_for_tool({"sources_present": ["pubmed"]}, "bogus_tool")["allowed"]
     assert not can_use_article_for_tool({"sources_present": []}, "summary")["allowed"]
+
+
+# ── Cochrane whichever index it came through; PMID = PubMed record ──
+def test_pubmed_indexed_cochrane_review_blocked_by_journal():
+    art = {"sources_present": ["pubmed"], "journal": "The Cochrane Database of Systematic Reviews", "pmid": "35150000"}
+    v = can_use_article_for_tool(art, "summary")
+    assert not v["allowed"]
+    assert v["reason"] == "cochrane_ai_ingestion_restricted"
+    assert can_use_article_for_tool(art, "link_out")["allowed"]
+
+
+def test_pubmed_indexed_cochrane_review_blocked_by_doi_prefix():
+    art = {"source_ids_json": {"europepmc": "x"}, "journal": "", "doi": "10.1002/14651858.CD002243.pub4"}
+    assert not can_use_article_for_tool(art, "summary")["allowed"]
+    assert not can_use_article_for_tool(art, "ranker_optimization")["allowed"]
+
+
+def test_record_with_pmid_but_no_recorded_source_is_pubmed():
+    assert can_use_article_for_tool({"pmid": "29347874", "journal": "N Engl J Med"}, "summary")["allowed"]
+
+
+def test_record_without_source_or_pmid_fails_closed():
+    v = can_use_article_for_tool({"source_ids_json": {}, "doi": "10.1/unknown"}, "summary")
+    assert not v["allowed"]
+    assert v["reason"] == "no_source_info_fail_closed"

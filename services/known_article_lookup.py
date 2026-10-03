@@ -888,7 +888,11 @@ class KnownArticleLookupService:
             "doi": candidate.get("doi"),
             "pmid": candidate.get("pmid"),
             "pmcid": candidate.get("pmcid"),
-            "source_ids_json": {},
+            # Where the metadata came from — the AI-use policy is per source.
+            "source_ids_json": (
+                {candidate["source"]: candidate.get("pmid") or candidate.get("doi") or ""}
+                if candidate.get("source") in ("pubmed", "crossref") else {}
+            ),
             "publication_types_json": candidate.get("publication_types") or [],
             "article_type_classification": None,
             "is_guideline": False,
