@@ -153,6 +153,12 @@ def check(plan: dict[str, Any], portfolio: dict[str, Any], *,
                                      "term for it will be missed."))
         else:
             tw.append(_check("pass", f"'{c['term']}': {len(words)} wording(s)" + (" + MeSH." if c.get("mesh") else ".")))
+        off = [t["text"] for t in c.get("off_equivalents") or [] if t.get("text")]
+        if off and not c.get("mesh"):
+            tw.append(_check("warn", f"'{c['term']}' has no MeSH heading and {len(off)} same-meaning wording(s) are "
+                                     "switched off (" + ", ".join(f"'{t}'" for t in off[:4])
+                                     + ("…" if len(off) > 4 else "") + ") — papers that use only those words will "
+                                     "be missed. Consider switching them on."))
         head = _narrow_phrase_concept(c, plan)
         if head:
             tw.append(_check("warn", f"'{c['term']}' is searched only as exact phrases and has no MeSH heading — papers "

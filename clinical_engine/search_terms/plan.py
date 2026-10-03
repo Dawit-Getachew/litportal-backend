@@ -52,6 +52,10 @@ def to_concept_plan(terms: SearchTerms, cqm: ClinicalQuestionMap) -> dict[str, A
                 "broader_mesh": (c.mesh.descriptor if c.mesh and not c.mesh.enabled and c.mesh.match == "broader"
                                  else None),
                 "synonyms": [t.text for t in c.terms if t.enabled] if terms.use_synonyms else [],
+                # Same-meaning wordings offered but left off: the automated PRESS check names
+                # them, and the bounded alternative may switch them on (and says so).
+                "off_equivalents": ([{"id": t.id, "text": t.text} for t in c.terms
+                                     if not t.enabled and t.kind == "equivalent"] if terms.use_synonyms else []),
             }
             for c in terms.concepts
         ],

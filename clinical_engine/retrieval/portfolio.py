@@ -208,11 +208,39 @@ def _narrow_phrase_concept(c: dict[str, Any], plan: dict[str, Any]) -> Optional[
 
 def _relaxation(plan: dict[str, Any]) -> Optional[tuple[dict[str, Any], str, list[dict[str, Any]]]]:
     """The single bounded alternative: (relaxed plan, reason, the term edits that
-    express it). Order: drop an outcome/comparator "must appear" → add the plain
-    term to an over-specific treatment phrase → add an offered broader MeSH heading
-    → drop the year limit. Condition and treatment always stay AND-ed."""
+    express it). Order: complete the vocabulary of "must appear" concepts that have
+    no MeSH heading (the broader heading and the same-meaning wordings the clinician
+    was offered but left off) → drop an outcome/comparator "must appear" → add the
+    plain term to an over-specific treatment phrase → drop the year limit.
+    Condition and treatment always stay AND-ed."""
     concepts = plan["concepts"]
     required = [c for c in concepts if c.get("required")]
+    adds: dict[str, dict[str, Any]] = {}
+    for c in required:
+        if c.get("mesh") or not c.get("id"):
+            continue
+        off = [t for t in c.get("off_equivalents") or [] if t.get("id") and t.get("text")]
+        if c.get("broader_mesh") or off:
+            adds[c["id"]] = {"mesh": c.get("broader_mesh"), "off": off}
+    if adds:
+        relaxed = {**plan, "concepts": [
+            {**x, "mesh": adds[x["id"]]["mesh"] or x.get("mesh"),
+             "synonyms": list(x.get("synonyms") or []) + [t["text"] for t in adds[x["id"]]["off"]]}
+            if x.get("id") in adds else x for x in concepts]}
+        parts, edits = [], []
+        for c in required:
+            a = adds.get(c.get("id"))
+            if not a:
+                continue
+            bits = ([f"the broader MeSH heading '{a['mesh']}'"] if a["mesh"] else []) + (
+                [f"{len(a['off'])} same-meaning wording(s) (" + ", ".join(f"'{t['text']}'" for t in a["off"][:3])
+                 + ("…" if len(a["off"]) > 3 else "") + ")"] if a["off"] else [])
+            parts.append(f"'{c['term']}': " + " and ".join(bits))
+            edits += ([{"op": "set_mesh_enabled", "concept_id": c["id"], "enabled": True}] if a["mesh"] else []) + [
+                {"op": "set_term_enabled", "concept_id": c["id"], "term_id": t["id"], "enabled": True} for t in a["off"]]
+        return (relaxed,
+                "Adds what was offered but left off — " + "; ".join(parts) + ". Every concept must still appear.",
+                edits)
     core_roles = {"condition", "presentation", "population", "intervention", "exposure", "index_test",
                   "prognostic_factor", "phenomenon", "concept"}
     if len(required) > 2:
@@ -236,12 +264,6 @@ def _relaxation(plan: dict[str, Any]) -> Optional[tuple[dict[str, Any], str, lis
                     "abstracts; the modifier is then judged when each paper is reviewed.",
                     [{"op": "add_term", "concept_id": c.get("id"), "text": head}]
                     + ([] if plan.get("use_synonyms", True) else [{"op": "set_use_synonyms", "enabled": True}]))
-    for c in required:
-        if c.get("broader_mesh") and not c.get("mesh"):
-            relaxed = {**plan, "concepts": [{**x, "mesh": x["broader_mesh"]} if x is c else x for x in concepts]}
-            return (relaxed,
-                    f"Adds the broader MeSH heading '{c['broader_mesh']}' for '{c['term']}'.",
-                    [{"op": "set_mesh_enabled", "concept_id": c.get("id"), "enabled": True}])
     years = (plan.get("filters") or {}).get("publication_years")
     if years:
         relaxed = {**plan, "filters": {**plan["filters"], "publication_years": None}}
