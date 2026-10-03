@@ -50,6 +50,8 @@ TOOLS: dict[str, ToolSpec] = {
                  "Labelled fixture candidates for demos/tests. Never live evidence."),
         ToolSpec("pubmed.search", "evidence_source", "PubMed E-utilities (Week 2 lanes)."),
         ToolSpec("europepmc.search", "evidence_source", "Europe PMC REST (Week 2 lanes)."),
+        ToolSpec("access.resolve", "evidence_source",
+                 "Verified full-text routes for one identity-checked paper (Europe PMC, PMC Cloud, Unpaywall)."),
         ToolSpec("model.json", "model", "Typed JSON model call through the model gateway."),
     )
 }

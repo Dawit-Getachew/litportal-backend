@@ -109,8 +109,8 @@ def search_plan(cqm: ClinicalQuestionMap, version: int,
         "limits": {"per_lane_candidates": 50, "max_total_candidates": 150},
         "approved_search": _approved_search(concept_plan),
         "notes": [
-            "Week 1: lanes are planned for inspection only; retrieval runs through the run's "
-            "retrieval adapter until the W2 lanes ship.",
+            "Engine retrieval (Week 2) runs the approved query portfolio in these lanes; questions without "
+            "reviewed search terms still use the existing pipeline.",
             "With approved search terms, the retrieval adapter searches exactly those terms "
             "(see approved_search); otherwise the existing pipeline reads the question itself.",
         ],
@@ -151,7 +151,27 @@ def legacy_search_inputs(cqm: ClinicalQuestionMap, change_kind: str) -> dict[str
             "source": "original_wording" if change_kind != "chip_edit" else "approved_interpretation"}
 
 
+_ENGINE_TASKS: list[tuple[str, str, list[str], list[str]]] = [
+    ("plan_search", "plan_search", [], []),
+    ("retrieve", "engine_retrieve", ["plan_search"], ["pubmed.search", "europepmc.search"]),
+    ("union", "engine_union", ["retrieve"], []),
+    ("admit", "engine_admit", ["union"], ["model.json"]),
+    ("lineage", "engine_lineage", ["admit"], ["pubmed.search", "europepmc.search", "model.json"]),
+    ("project", "engine_project", ["lineage"], []),
+    ("access", "engine_access", ["project"], ["access.resolve"]),
+]
+
+
 def build_tasks(run: dict, *, mode: str, adapter: str) -> list[dict]:
+    if adapter == "engine":
+        specs = list(_ENGINE_TASKS)
+        if mode == "answer_for_me":
+            specs.append(("delegated_selection", "delegated_selection", ["access"], []))
+        return [TaskDoc(
+            run_id=run["id"], question_version_id=run["question_version_id"], key=key, type=ttype,
+            seq=seq, depends_on=deps, tools=tools, max_attempts=settings.TASK_MAX_ATTEMPTS,
+            idempotency_key=f"{run['id']}:{key}",
+        ).model_dump() for seq, (key, ttype, deps, tools) in enumerate(specs, start=1)]
     specs: list[tuple[str, str, list[str], list[str]]] = [
         ("plan_search", "plan_search", [], []),
         ("retrieve", "retrieve",

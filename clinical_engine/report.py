@@ -170,6 +170,10 @@ async def build_report(user: dict, session_id: str, *, live_counts: bool = False
     approval = version.get("approval") or {}
     plan = session.get("engine_concept_plan") if isinstance(session.get("engine_concept_plan"), dict) else None
 
+    if run.get("retrieval_adapter") == "engine":
+        return await _engine_report(run, version, session, cqm, terms, approval, plan, session_id,
+                                    live_counts=live_counts)
+
     query_rows = [q async for q in db[Collections.SEARCH_QUERIES].find(
         {"search_session_id": session_id},
         {"_id": 0, "source": 1, "query_family": 1, "query_string": 1, "planner_source": 1,
@@ -259,5 +263,104 @@ async def build_report(user: dict, session_id: str, *, live_counts: bool = False
             "search_plan": plan,
             "queries": [{"source": q.get("source"), "family": q.get("query_family"),
                          "query": q.get("query_string"), "executed": not _not_run(q)} for q in query_rows],
+        },
+    }
+
+
+async def _engine_report(run: dict, version: dict, session: dict, cqm: ClinicalQuestionMap,
+                         terms: Optional[SearchTerms], approval: dict, plan: Optional[dict[str, Any]],
+                         session_id: str, *, live_counts: bool) -> dict[str, Any]:
+    """The same report for an engine search, from the engine's query ledger: each
+    query's status, the source's hit count, records read, whether the result was
+    cut at the budget, and PubMed's own translation. No padding: what is listed
+    is what qualified."""
+    from clinical_engine.retrieval.portfolio import FAMILY_LABELS
+
+    legacy_src = {"pubmed": "pubmed", "europepmc": "europe_pmc"}
+    ledger = await store.queries_for_run(run["id"])
+    pubs = await store.publications_for_run(run["id"])
+    found: dict[str, int] = {}
+    for p in pubs:
+        for fam in set(p.get("families") or []):
+            found[fam] = found.get(fam, 0) + 1
+    families: dict[str, dict[str, Any]] = {}
+    for q in ledger:
+        fam = q["family"]
+        entry = families.setdefault(fam, {
+            "family": fam, "label": FAMILY_LABELS.get(fam, fam), "description": q.get("purpose") or "",
+            "lane": q.get("lane"), "papers_found": found.get(fam, 0), "queries": [],
+        })
+        src = legacy_src.get(q["source"], q["source"])
+        entry["queries"].append({
+            "source": src, "source_label": SOURCE_LABELS.get(src, src), "query": q["query"],
+            "open_url": _open_url(src, q["query"]), "planner_source": "engine", "fallback": False,
+            "status": q.get("status"), "count": q.get("count"), "records_read": q.get("records_read"),
+            "max_records": q.get("max_records"), "truncated": q.get("truncated"),
+            "translation": q.get("translation"), "warnings": q.get("warnings") or [],
+        })
+    ordered = list(families.values())
+    tasks = {t["key"]: (t.get("output") or {}) for t in await store.get_tasks(run["id"]) if t.get("status") == "succeeded"}
+    retrieve = tasks.get("retrieve") or {}
+    alt = retrieve.get("alternative") or {}
+    not_run = []
+    if alt.get("available") and not alt.get("ran"):
+        for spec in retrieve.get("portfolio") or []:
+            if spec.get("family") == "alternative":
+                src = legacy_src.get(spec["source"], spec["source"])
+                not_run.append({"source": src, "source_label": SOURCE_LABELS.get(src, src), "family": "alternative",
+                                "query": spec["query"],
+                                "reason": "Runs only when the main search finds almost nothing — it found enough."})
+    per_source = {}
+    for raw_src in ("pubmed", "europepmc"):
+        rows = [q for q in ledger if q["source"] == raw_src]
+        if not rows:
+            continue
+        src = legacy_src[raw_src]
+        per_source[src] = {
+            "label": SOURCE_LABELS.get(src, src),
+            "queries_run": sum(1 for q in rows if q.get("status") not in ("skipped",)),
+            "records_read_per_query": max(int(q.get("max_records") or 0) for q in rows),
+            "records_read_total": sum(int(q.get("records_read") or 0) for q in rows),
+            "status": ((retrieve.get("sources") or {}).get(raw_src) or {}).get("status"),
+            "papers_found": sum(1 for p in pubs if raw_src in (p.get("sources") or [])),
+        }
+    sections = (tasks.get("project") or {}).get("sections") or {}
+    excluded = sum(1 for p in pubs if (p.get("admission") or {}).get("state") == "excluded")
+    counts = None
+    if live_counts:
+        main = {q["source"]: q["query"] for f in ordered if f["family"] == "main" for q in f["queries"]}
+        counts = await hit_counts({"pubmed": main.get("pubmed"), "europe_pmc": main.get("europe_pmc")})
+    return {
+        "session_id": session_id, "question_id": run["question_id"],
+        "run": {"id": run["id"], "mode": run["mode"], "status": run["status"],
+                "created_at": run.get("created_at"), "finished_at": run.get("finished_at")},
+        "engine": True,
+        "session_status": session.get("status"),
+        "question": _question_section(cqm, version),
+        "search_terms": _terms_section(terms) if terms is not None else None,
+        "approval": {"mode": approval.get("mode"), "approved_at": approval.get("approved_at"),
+                     "search_terms_version": approval.get("search_terms_version")},
+        "plan_matches_approval": bool(plan and approval.get("search_terms_hash")
+                                      and plan.get("terms_hash") == approval.get("search_terms_hash")),
+        "boolean": (_boolean_section(plan, outcome_search_ran=False) if plan else None),
+        "searches": ordered,
+        "not_run": not_run,
+        "press": retrieve.get("press"),
+        "results": {
+            "sources": per_source,
+            "unique_papers": len(pubs),
+            "excluded": excluded,
+            "kept": len(pubs) - excluded,
+            "shown": int(sections.get("main", 0)) + int(sections.get("other", 0)),
+            "broader_shown": 0,
+        },
+        "live_counts": counts,
+        "json": {
+            "question_map": cqm.model_dump(mode="json"),
+            "search_terms": terms.model_dump(mode="json") if terms is not None else None,
+            "search_plan": plan,
+            "queries": [{"source": q["source"], "family": q["family"], "query": q["query"], "executed": True,
+                         "status": q.get("status"), "count": q.get("count"), "records_read": q.get("records_read")}
+                        for q in ledger],
         },
     }

@@ -454,6 +454,71 @@ async def search_terms_counts(user: dict, question_id: str, *, version: int, ter
     return {"question_id": question_id, "version": version, "terms_version": terms_version, "counts": counts}
 
 
+async def search_plan_preview(user: dict, question_id: str, *, version: int, terms_version: int,
+                              with_counts: bool = True) -> dict[str, Any]:
+    """Step 2 preview of the query portfolio the engine will run (W2.1): every
+    search with its purpose and budget, the automated PRESS-informed check, and
+    — when the main search matches nothing — the bounded alternative with its
+    count and the term edits that apply it. Count-only source calls; nothing is
+    retrieved."""
+    import httpx
+
+    from clinical_engine.retrieval import portfolio, press
+    from clinical_engine.retrieval import pubmed as pubmed_src
+    from clinical_engine.retrieval.http import SourceError
+    from clinical_engine.retrieval.run import SOURCE_LABELS
+    from clinical_engine.search_terms.plan import to_concept_plan
+    from services.engine_concept_plan import validate_plan
+
+    q = await _load(user["id"], question_id)
+    current = await store.get_version(question_id, version)
+    if current is None or not current.get("search_terms") or version != q.get("current_version"):
+        raise EngineConflict("stale_version", "The interpretation changed — review the latest version.")
+    terms = SearchTerms.model_validate(current["search_terms"])
+    if terms.version != terms_version:
+        raise EngineConflict("stale_terms", "The search terms changed — reload and try again.")
+    cqm = ClinicalQuestionMap.model_validate(current["map"])
+    plan = validate_plan(to_concept_plan(terms, cqm))
+    if plan is None:
+        return {"question_id": question_id, "version": version, "terms_version": terms_version, "searches": [],
+                "reason": "No concept is marked 'must appear', so there is nothing to search yet."}
+    pf = portfolio.build(plan, cqm.question_text)
+    main_pubmed: Optional[dict[str, Any]] = None
+    alt_counts: Optional[dict[str, Optional[int]]] = None
+    if with_counts:
+        main_q = next((s.query for s in pf["specs"] if s.family == "main" and s.source == "pubmed"), None)
+        if main_q:
+            try:
+                from clinical_engine.retrieval.http import transport_or_default
+
+                async with httpx.AsyncClient(timeout=10.0, transport=transport_or_default(None)) as client:
+                    page = await pubmed_src.esearch(client, main_q, retmax=0)
+                main_pubmed = {"count": page.count, "translation": page.translation,
+                               "warnings": page.warnings, "errors": page.errors}
+            except (SourceError, httpx.HTTPError):
+                main_pubmed = None
+        if main_pubmed and main_pubmed["count"] < settings.RETRIEVAL_SPARSE_THRESHOLD and pf["alternative"]:
+            alt = {s.source: s.query for s in pf["specs"] if s.family == "alternative"}
+            from clinical_engine.retrieval.http import transport_or_default
+
+            alt_counts = await hit_counts({"pubmed": alt.get("pubmed"), "europe_pmc": alt.get("europepmc")},
+                                          transport=transport_or_default(None))
+    from clinical_engine.retrieval.portfolio import FAMILY_LABELS, LANE_LABELS
+
+    return {
+        "question_id": question_id, "version": version, "terms_version": terms_version,
+        "searches": [{**s.public(), "family_label": FAMILY_LABELS.get(s.family, s.family),
+                      "lane_label": LANE_LABELS.get(s.lane, s.lane),
+                      "source_label": SOURCE_LABELS.get(s.source, s.source)} for s in pf["specs"]],
+        "skipped": pf["skipped"],
+        "alternative": ({**pf["alternative"], "counts": alt_counts} if pf["alternative"] else None),
+        "zero_results": bool(main_pubmed and main_pubmed["count"] == 0),
+        "sparse": bool(main_pubmed and main_pubmed["count"] < settings.RETRIEVAL_SPARSE_THRESHOLD),
+        "main_count": (main_pubmed or {}).get("count"),
+        "press": press.check(plan, pf, pubmed_main=main_pubmed),
+    }
+
+
 async def confirm_question(user: dict, question_id: str, *, version: int, mode: str,
                            search_terms_version: Optional[int] = None) -> dict[str, Any]:
     user_id = user["id"]

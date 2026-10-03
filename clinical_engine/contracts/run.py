@@ -158,7 +158,8 @@ class RunDoc(BaseModel):
     mode: RunMode
     status: RunStatus = "queued"
     plan_version: str = "plan.v1"
-    retrieval_adapter: Literal["legacy_pipeline", "mock"] = "legacy_pipeline"
+    retrieval_adapter: Literal["legacy_pipeline", "mock", "engine"] = "legacy_pipeline"
+    progress: dict[str, Any] = Field(default_factory=dict)  # engine adapter: stage, sources, counts
     budget: Budget = Field(default_factory=Budget)
     usage: Usage = Field(default_factory=Usage)
     cancel_requested: bool = False

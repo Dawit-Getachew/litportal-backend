@@ -51,12 +51,24 @@ async def trace(run: dict, event: str, *, task: Optional[dict] = None, actor: st
 # ── Creation and control ────────────────────────────────────────────────────
 
 
+def _adapter(version: dict) -> str:
+    """mock | engine (questions whose step-2 search terms were approved) | legacy_pipeline."""
+    if settings.RETRIEVAL_ADAPTER == "mock":
+        return "mock"
+    if settings.RETRIEVAL_ADAPTER == "engine" and (version.get("approval") or {}).get("search_terms_version") is not None:
+        return "engine"
+    return "legacy_pipeline"
+
+
 async def create_run(version: dict, *, mode: str, user_id: str) -> dict:
+    adapter = _adapter(version)
+    engine = adapter == "engine"
     run = RunDoc(
         question_id=version["question_id"], question_version_id=version["id"], version=version["version"],
         user_id=user_id, mode=mode,  # type: ignore[arg-type]
-        retrieval_adapter="mock" if settings.RETRIEVAL_ADAPTER == "mock" else "legacy_pipeline",
-        budget=Budget(max_tool_calls=settings.RUN_MAX_TOOL_CALLS, max_llm_tokens=settings.RUN_MAX_LLM_TOKENS,
+        retrieval_adapter=adapter,  # type: ignore[arg-type]
+        budget=Budget(max_tool_calls=settings.ENGINE_RUN_MAX_TOOL_CALLS if engine else settings.RUN_MAX_TOOL_CALLS,
+                      max_llm_tokens=settings.ENGINE_RUN_MAX_LLM_TOKENS if engine else settings.RUN_MAX_LLM_TOKENS,
                       max_wall_seconds=settings.RUN_MAX_WALL_SECONDS, max_task_attempts=settings.TASK_MAX_ATTEMPTS),
     ).model_dump()
     tasks = build_tasks(run, mode=mode, adapter=run["retrieval_adapter"])

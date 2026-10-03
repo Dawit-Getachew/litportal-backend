@@ -20,6 +20,9 @@ os.environ.setdefault("MONGO_URL", "mongodb://localhost:27017")
 os.environ["DB_NAME"] = _TEST_DB_NAME
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("SEED_TEST_USERS", "true")
+# Engine runs in tests never reach live sources implicitly: tests that exercise
+# the Week-2 engine retrieval opt in and mock every HTTP call.
+os.environ.setdefault("CLINICAL_ENGINE_RETRIEVAL_ADAPTER", "legacy_pipeline")
 os.environ.setdefault("JWT_ACCESS_SECRET", "test-access-secret-do-not-use-in-prod")
 os.environ.setdefault("JWT_REFRESH_SECRET", "test-refresh-secret-do-not-use-in-prod")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")

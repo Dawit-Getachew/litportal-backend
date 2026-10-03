@@ -46,8 +46,12 @@ def to_concept_plan(terms: SearchTerms, cqm: ClinicalQuestionMap) -> dict[str, A
         "age_group": cqm.age_group(),
         "concepts": [
             {
-                "role": c.role, "term": c.term, "required": c.required,
+                "id": c.id, "role": c.role, "term": c.term, "required": c.required,
                 "mesh": c.mesh.descriptor if c.mesh and c.mesh.enabled else None,
+                # A broader heading the clinician was offered but left off — only the
+                # bounded alternative search may use it, and says so.
+                "broader_mesh": (c.mesh.descriptor if c.mesh and not c.mesh.enabled and c.mesh.match == "broader"
+                                 else None),
                 "synonyms": [t.text for t in c.terms if t.enabled] if terms.use_synonyms else [],
             }
             for c in terms.concepts

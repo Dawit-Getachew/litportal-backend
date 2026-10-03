@@ -159,6 +159,16 @@ async def search_terms_counts(question_id: str, version: int = Query(..., ge=1),
                                                      terms_version=terms_version))
 
 
+@router.get("/questions/{question_id}/search-plan", dependencies=[Depends(_enabled)])
+async def search_plan_preview(question_id: str, version: int = Query(..., ge=1),
+                              terms_version: int = Query(..., ge=1), counts: bool = Query(True),
+                              current_user: dict = Depends(get_current_user)):
+    """Step 2: the searches the engine will run for these terms, the automated
+    PRESS-informed check and the bounded alternative (count-only; nothing retrieved)."""
+    return await _call(questions.search_plan_preview(current_user, question_id, version=version,
+                                                     terms_version=terms_version, with_counts=counts))
+
+
 @router.post("/questions/{question_id}/feedback", status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(_enabled)])
 async def submit_feedback(question_id: str, body: FeedbackBody, current_user: dict = Depends(get_current_user)):
@@ -203,6 +213,42 @@ async def search_report(session_id: str, live_counts: bool = Query(False),
     if built is None:
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "No search report for this search."})
     return built
+
+
+@router.get("/sessions/{session_id}/evidence", dependencies=[Depends(_enabled)])
+async def session_evidence(session_id: str, current_user: dict = Depends(get_current_user)):
+    """The engine's evidence list for a search: progress per source, the funnel,
+    sections with each paper's state, reason, identity, lineage and access, and
+    the query portfolio with its PRESS-informed check. 404 for other searches."""
+    from clinical_engine.retrieval import evidence
+
+    built = await evidence.build_view(current_user, session_id)
+    if built is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "No engine evidence list."})
+    return built
+
+
+@router.post("/sessions/{session_id}/evidence/{publication_id}/access/retry", dependencies=[Depends(_enabled)])
+async def retry_access(session_id: str, publication_id: str, current_user: dict = Depends(get_current_user)):
+    """Re-check the full-text routes for one listed paper (e.g. after a failed fetch)."""
+    import httpx
+
+    from clinical_engine import store
+    from clinical_engine.retrieval import access, evidence
+
+    run = await store.get_run_for_session(session_id, current_user["id"])
+    pub = next((p for p in await store.publications_for_run(run["id"]) if p["id"] == publication_id), None) \
+        if run and run.get("retrieval_adapter") == "engine" else None
+    if pub is None or pub.get("section") not in ("main", "other", "more") or pub.get("identity_status") == "quarantined":
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "No such listed paper."})
+    import os
+
+    from clinical_engine.retrieval.http import transport_or_default
+
+    async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, transport=transport_or_default(None)) as client:
+        result = await access.resolve(pub, client, unpaywall_email=os.environ.get("UNPAYWALL_EMAIL", "").strip() or None)
+    await store.update_publication(pub["id"], {"access": result})
+    return evidence.card({**pub, "access": result})
 
 
 @router.get("/evidence-sets/{set_id}", dependencies=[Depends(_enabled)])

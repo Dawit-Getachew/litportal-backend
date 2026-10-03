@@ -288,6 +288,10 @@ async def delegated_selection(ctx: TaskContext) -> dict[str, Any]:
     if ctx.checkpoint.get("evidence_set_id"):
         return {"evidence_set_id": ctx.checkpoint["evidence_set_id"],
                 "links": {"evidence_set_id": ctx.checkpoint["evidence_set_id"]}}
+    if ctx.run.get("retrieval_adapter") == "engine":
+        from clinical_engine.orchestrator.tasks.engine import engine_delegated_selection
+
+        return await engine_delegated_selection(ctx, delegation)
     quarantined = set(ctx.outputs["integrity_check"].get("quarantined_record_ids") or [])
     limit = settings.DELEGATED_MAX_ITEMS
     items: list[EvidenceSetItem] = []
@@ -352,3 +356,8 @@ HANDLERS: dict[str, Handler] = {
     "integrity_check": integrity_check,
     "delegated_selection": delegated_selection,
 }
+
+# Week-2 engine retrieval handlers (registered after the shared names they import).
+from clinical_engine.orchestrator.tasks import engine as _engine  # noqa: E402
+
+HANDLERS.update(_engine.HANDLERS)

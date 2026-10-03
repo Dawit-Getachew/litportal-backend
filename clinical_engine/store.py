@@ -25,7 +25,13 @@ TRACES = "engine_traces"
 EVIDENCE_SETS = "engine_evidence_sets"
 RATE = "engine_rate_counters"
 FEEDBACK = "engine_feedback"
-ALL_COLLECTIONS = (QUESTIONS, VERSIONS, RUNS, TASKS, TRACES, EVIDENCE_SETS, RATE, FEEDBACK)
+# Week-2 retrieval: the executed-query ledger, raw source records and the
+# per-run publications (identity, admission, lineage and access live there).
+QUERIES = "engine_queries"
+CANDIDATES = "engine_candidates"
+PUBLICATIONS = "engine_publications"
+ALL_COLLECTIONS = (QUESTIONS, VERSIONS, RUNS, TASKS, TRACES, EVIDENCE_SETS, RATE, FEEDBACK,
+                   QUERIES, CANDIDATES, PUBLICATIONS)
 
 # Identifies this process as a lease holder (multi-replica safe).
 WORKER_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
@@ -63,6 +69,12 @@ async def ensure_indexes() -> None:
         (RATE, [("key", ASCENDING)], {"unique": True, "name": "erc_key"}),
         (RATE, [("expires_at", ASCENDING)], {"expireAfterSeconds": 0, "name": "erc_ttl"}),
         (FEEDBACK, [("question_id", ASCENDING), ("created_at", DESCENDING)], {"name": "efb_q_created"}),
+        (QUERIES, [("run_id", ASCENDING), ("created_at", ASCENDING)], {"name": "eqy_run_created"}),
+        (QUERIES, [("id", ASCENDING)], {"unique": True, "name": "eqy_id"}),
+        (CANDIDATES, [("run_id", ASCENDING), ("source", ASCENDING), ("record_key", ASCENDING)],
+         {"unique": True, "name": "ecd_run_source_key"}),
+        (PUBLICATIONS, [("id", ASCENDING)], {"unique": True, "name": "epb_id"}),
+        (PUBLICATIONS, [("run_id", ASCENDING), ("position", ASCENDING)], {"name": "epb_run_position"}),
     ]
     for coll, keys, opts in specs:
         try:
@@ -330,3 +342,89 @@ async def get_evidence_set(set_id: str, user_id: Optional[str] = None) -> Option
     if user_id is not None:
         q["user_id"] = user_id
     return await _db()[EVIDENCE_SETS].find_one(q, _P)
+
+
+# ── Week-2 retrieval: query ledger, candidates, publications ────────────────
+
+
+async def insert_query(doc: dict) -> None:
+    await _db()[QUERIES].insert_one(dict(doc))
+
+
+async def update_query(query_id: str, set_fields: dict) -> None:
+    await _db()[QUERIES].update_one({"id": query_id}, {"$set": set_fields})
+
+
+async def queries_for_run(run_id: str) -> list[dict]:
+    cur = _db()[QUERIES].find({"run_id": run_id}, _P).sort("created_at", ASCENDING)
+    return [d async for d in cur]
+
+
+async def add_candidate_hit(run_id: str, source: str, record_key: str, doc: dict, hit: dict) -> None:
+    """Upsert one source record for the run and append the query hit that found it."""
+    await _db()[CANDIDATES].update_one(
+        {"run_id": run_id, "source": source, "record_key": record_key},
+        {"$setOnInsert": {**doc, "run_id": run_id, "source": source, "record_key": record_key,
+                          "created_at": now()},
+         "$push": {"hits": hit}},
+        upsert=True,
+    )
+
+
+async def add_candidate_hits(run_id: str, source: str, items: list[tuple[str, dict, dict]]) -> None:
+    """Bulk form of :func:`add_candidate_hit` — one round trip per page of records."""
+    from pymongo import UpdateOne
+
+    if not items:
+        return
+    t = now()
+    ops = [UpdateOne(
+        {"run_id": run_id, "source": source, "record_key": key},
+        {"$setOnInsert": {**doc, "run_id": run_id, "source": source, "record_key": key, "created_at": t},
+         "$push": {"hits": hit}},
+        upsert=True,
+    ) for key, doc, hit in items]
+    await _db()[CANDIDATES].bulk_write(ops, ordered=False)
+
+
+async def candidates_for_run(run_id: str) -> list[dict]:
+    cur = _db()[CANDIDATES].find({"run_id": run_id}, _P).sort("created_at", ASCENDING)
+    return [d async for d in cur]
+
+
+async def replace_publications(run_id: str, docs: list[dict], *, origin: str) -> None:
+    """Write the run's publications of one origin (initial union or an update
+    search) — rerunning a task replaces, never duplicates."""
+    await _db()[PUBLICATIONS].delete_many({"run_id": run_id, "origin": origin})
+    if docs:
+        await _db()[PUBLICATIONS].insert_many([dict(d) for d in docs], ordered=False)
+
+
+async def publications_for_run(run_id: str) -> list[dict]:
+    cur = _db()[PUBLICATIONS].find({"run_id": run_id}, _P).sort([("position", ASCENDING), ("rank", ASCENDING)])
+    return [d async for d in cur]
+
+
+async def update_publication(pub_id: str, set_fields: dict) -> None:
+    await _db()[PUBLICATIONS].update_one({"id": pub_id}, {"$set": {**set_fields, "updated_at": now()}})
+
+
+async def bulk_update_publications(updates: list[tuple[str, dict]]) -> None:
+    from pymongo import UpdateOne
+
+    if not updates:
+        return
+    t = now()
+    await _db()[PUBLICATIONS].bulk_write(
+        [UpdateOne({"id": pid}, {"$set": {**fields, "updated_at": t}}) for pid, fields in updates], ordered=False)
+
+
+async def clear_retrieval(run_id: str, *, origin: str | None = None) -> None:
+    """A retried retrieval task starts clean (no duplicate ledger rows or hits)."""
+    if origin is None:
+        await _db()[QUERIES].delete_many({"run_id": run_id})
+        await _db()[CANDIDATES].delete_many({"run_id": run_id})
+        await _db()[PUBLICATIONS].delete_many({"run_id": run_id})
+    else:
+        await _db()[QUERIES].delete_many({"run_id": run_id, "lane": origin})
+        await _db()[PUBLICATIONS].delete_many({"run_id": run_id, "origin": origin})

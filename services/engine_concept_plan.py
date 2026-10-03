@@ -257,3 +257,17 @@ def apply_to_picott(picott: dict[str, Any], anchors_out: dict[str, Any], plan: d
     anchors_out["anchor_repair_applied"] = False
     anchors_out["picott_overrides"] = {}
     anchors_out["interpretation_source"] = PLANNER_SOURCE
+
+
+# Public names for the engine's query portfolio (clinical_engine/retrieval/portfolio.py),
+# which builds its search families from the same approved-terms blocks and filters.
+concept_words = _words
+concept_block = _block
+source_filters = _filters
+epmc_since = _epmc_since
+DESIGNS_PUBMED = _DESIGNS_PUBMED
+DESIGNS_EPMC = _DESIGNS_EPMC
+DESIGN_ALIASES = _DESIGN_ALIASES
+REVIEWS_PUBMED = _REVIEWS_PUBMED
+REVIEWS_EPMC = _REVIEWS_EPMC
+MAX_QUERY_LEN = _MAX_QUERY_LEN
