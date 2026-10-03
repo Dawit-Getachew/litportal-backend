@@ -96,9 +96,10 @@ States (choose exactly one):
 
 Rules:
 - Judge relevance only — do not downgrade for study design (randomized or observational) or age of the paper.
-- Outcomes: the same outcome at another time point (e.g. 90-day instead of 28-day mortality) or a closely
-  related measure of it still counts as the asked outcome — say so in the reason. Concepts listed as "used to
-  rank" are not required for "direct".
+- Outcomes: the same outcome at another time point (e.g. 90-day instead of 28-day mortality) or the same
+  outcome measured another way (e.g. mortality when survival was asked) is outcome "match" — say so in the
+  reason. Use outcome "related" only for a surrogate or neighbouring outcome (e.g. shock reversal, physiology or
+  transfusion volume when survival was asked). Concepts listed as "used to rank" are not required for "direct".
 - A multi-component intervention (a bundle or protocol) that merely contains the asked intervention is
   "indirect", not "direct".
 - Drug classes: when the question names a class (e.g. "corticosteroids"), a specific member or a combination
@@ -218,6 +219,13 @@ _FROM_TRIAL = re.compile(r"\b(?:from|of|in) the [\w-]{3,}(?: \w+){0,3} (?:random
 
 
 _CASE = re.compile(r"\bcase reports?\b|\ba case of\b|\bcase series\b|\bcase presentation\b")
+# PubMed publication types that mark a study's own results (not "comparative" or
+# "evaluation" study, which PubMed also gives to models and lab work).
+_PRIMARY_TYPES = frozenset({
+    "randomized controlled trial", "controlled clinical trial", "clinical trial", "clinical trial, phase i",
+    "clinical trial, phase ii", "clinical trial, phase iii", "clinical trial, phase iv", "pragmatic clinical trial",
+    "equivalence trial", "observational study", "multicenter study",
+})
 
 
 def _report_role(pub: dict[str, Any], types: set[str], title: str) -> str:
@@ -242,9 +250,9 @@ def _report_role(pub: dict[str, Any], types: set[str], title: str) -> str:
         return "meta_analysis"
     if "systematic review" in types or "systematic review" in title:
         return "systematic_review"
-    if "review" in types:
+    if "review" in types or "historical article" in types:
         return "narrative_review"
-    if base == "primary_result":
+    if base == "primary_result" or (base == "unknown" and types & _PRIMARY_TYPES):
         return "primary_result"
     return "other"
 
@@ -383,7 +391,8 @@ _ROLE_EXCLUSIONS = frozenset({"not_a_study", "no_results", "animal_or_lab", "ret
 
 
 def policy_state(dims: dict[str, str], model_state: str, model_excl: Optional[str], *,
-                 comparator_stated: bool = True, na_intervention_ok: bool = False) -> tuple[str, Optional[str]]:
+                 comparator_stated: bool = True, na_intervention_ok: bool = False,
+                 stated: frozenset[str] = frozenset(), guideline: bool = False) -> tuple[str, Optional[str]]:
     """The admission state from the model's per-dimension labels — a fixed,
     explainable rule (more stable than one holistic call):
 
@@ -393,13 +402,41 @@ def policy_state(dims: dict[str, str], model_state: str, model_excl: Optional[st
       comparison or outcome different        → supportive (when the question names no
                                                comparator, any non-matching comparison is
                                                a head-to-head study → supportive)
+      outcome related (a surrogate or nearby
+        outcome, not the one asked)          → supportive (not for guidelines: they
+                                               recommend, they do not report outcomes)
       population or condition narrower (a subgroup) → supportive
       any core dimension broader             → broad-answering
       population and condition match, intervention match or narrower
         (a specific member of the asked class)  → direct
 
     The model's own call is kept when it excluded for a role reason (not a study,
-    no results, animal/lab) or when two or more core dimensions are unclear."""
+    no results, animal/lab) or when two or more core dimensions are unclear. When
+    the outcome (or a stated comparator) could not be judged from what was read,
+    the rule never makes a paper stronger than the model's own call; when the
+    labels say "answers" but the model's own call is indirect or excluded, the
+    paper is shown as uncertain, not as an answer.
+
+    ``stated`` names the dimensions the question states: "na" on one of them means
+    the paper does not address it (e.g. a training study has no patients), which
+    is treated as unclear — never as compatible with an answer."""
+    dims = {k: ("unclear" if v == "na" and k in stated else v) for k, v in dims.items()}
+    state, excl = _policy_state(dims, model_state, model_excl, comparator_stated=comparator_stated,
+                                na_intervention_ok=na_intervention_ok, guideline=guideline)
+    unclear = dims["outcome"] == "unclear" or (comparator_stated and dims["comparison"] == "unclear")
+    if unclear and state in _STRENGTH and model_state in _STRENGTH and _STRENGTH[model_state] > _STRENGTH[state]:
+        return model_state, None
+    if state in QUALIFYING and model_state in ("indirect", "excluded"):
+        return "uncertain", None
+    return state, excl
+
+
+# Weaker → larger. "uncertain" sits between a partial answer and an indirect one.
+_STRENGTH = {"direct": 0, "broad_answering": 1, "supportive": 2, "uncertain": 3, "indirect": 4}
+
+
+def _policy_state(dims: dict[str, str], model_state: str, model_excl: Optional[str], *,
+                  comparator_stated: bool, na_intervention_ok: bool, guideline: bool) -> tuple[str, Optional[str]]:
     if model_state == "excluded" and model_excl in _ROLE_EXCLUSIONS:
         return "excluded", model_excl
     core = [dims["population"], dims["condition"], dims["intervention"]]
@@ -415,7 +452,7 @@ def policy_state(dims: dict[str, str], model_state: str, model_excl: Optional[st
         return "indirect", None  # the paper does not study the asked treatment / exposure / test
     head_to_head = dims["comparison"] in ("different", "related") or (
         not comparator_stated and dims["comparison"] in ("narrower", "broader"))
-    if head_to_head or dims["outcome"] == "different":
+    if head_to_head or dims["outcome"] == "different" or (dims["outcome"] == "related" and not guideline):
         return "supportive", None
     if "narrower" in (dims["population"], dims["condition"]):
         return "supportive", None
@@ -428,7 +465,8 @@ def policy_state(dims: dict[str, str], model_state: str, model_excl: Optional[st
 
 
 def validate_items(data: Any, ids: list[str], *, comparator_stated: bool = True,
-                   na_intervention_ok: bool = False) -> dict[str, dict[str, Any]]:
+                   na_intervention_ok: bool = False, stated: frozenset[str] = frozenset(),
+                   roles: Optional[dict[str, str]] = None) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     items = data.get("items") if isinstance(data, dict) else None
     for it in items if isinstance(items, list) else []:
@@ -446,8 +484,9 @@ def validate_items(data: Any, ids: list[str], *, comparator_stated: bool = True,
         dims = {k: (it.get(k) if it.get(k) in MATCH else "unclear")
                 for k in ("population", "condition", "intervention", "comparison", "outcome", "setting")}
         model_state = state
+        guideline = it.get("role") == "guideline" or (roles or {}).get(it["id"]) == "guideline"
         state, excl = policy_state(dims, state, excl, comparator_stated=comparator_stated,
-                                   na_intervention_ok=na_intervention_ok)
+                                   na_intervention_ok=na_intervention_ok, stated=stated, guideline=guideline)
         out[it["id"]] = {
             "state": state, "model_state": model_state, "exclusion": excl, "reason": reason or STATE_LABELS[state],
             "role": it.get("role") if it.get("role") in ROLES else None,
@@ -469,7 +508,18 @@ async def judge_batch(gateway: ModelGateway, ctx: dict[str, Any], batch: list[tu
     family = TYPE_FAMILY.get(ctx["question_type"], "treatment")
     return validate_items(res.data, [cid for cid, _, _ in batch],
                           comparator_stated=bool(ctx["elements"].get("comparator")) or not treatment_like,
-                          na_intervention_ok=family in ("prognosis", "epidemiology", "qualitative")), res
+                          na_intervention_ok=family in ("prognosis", "epidemiology", "qualitative"),
+                          stated=stated_dimensions(ctx["elements"]),
+                          roles={cid: sig.get("role") for cid, _, sig in batch}), res
+
+
+_STATED_BY = {"population": ("population", "age_group", "sex", "pregnancy"), "condition": ("condition",),
+              "outcome": ("outcome",)}
+
+
+def stated_dimensions(elements: dict[str, list[str]]) -> frozenset[str]:
+    """The judgment dimensions the question itself states (from its active elements)."""
+    return frozenset(d for d, roles in _STATED_BY.items() if any(elements.get(r) for r in roles))
 
 
 # ── Final state ─────────────────────────────────────────────────────────────
@@ -490,7 +540,8 @@ def finalize(sig: dict[str, Any], judged: Optional[dict[str, Any]], *, method: s
     # A specific role from the record's own types wins; a title-only guess or a
     # generic role defers to the model, which read the abstract.
     keep = sig["role"] not in ("other", "primary_result") and sig.get("role_source") != "title"
-    out["role"] = sig["role"] if keep or not judged.get("role") else judged["role"]
+    generic = judged.get("role") in (None, "", "other")
+    out["role"] = sig["role"] if keep or generic else judged["role"]
     out["method"] = method
     if sig.get("negated_condition") and out["state"] in QUALIFYING + ("supportive",):
         out.update(state="excluded", exclusion="wrong_population",
