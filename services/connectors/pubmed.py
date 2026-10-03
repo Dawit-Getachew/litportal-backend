@@ -302,13 +302,13 @@ class PubMedConnector:
         except ET.ParseError:
             return out
         for article in root.iter("PubmedArticle"):
-            pmid_el = article.find(".//PMID")
+            pmid_el = article.find("MedlineCitation/PMID")
             if pmid_el is None or not pmid_el.text:
                 continue
             pmid = pmid_el.text.strip()
-            # Abstract
+            # Abstract (the article's own English abstract — not OtherAbstract)
             abstract_parts: list[str] = []
-            for ab in article.iter("AbstractText"):
+            for ab in article.findall("MedlineCitation/Article/Abstract/AbstractText"):
                 label = ab.attrib.get("Label")
                 text = (ab.text or "").strip()
                 if label:
@@ -318,22 +318,30 @@ class PubMedConnector:
             abstract = "\n".join([p for p in abstract_parts if p]).strip() or None
             # Publication types
             pub_types: list[str] = []
-            for pt in article.iter("PublicationType"):
+            for pt in article.findall("MedlineCitation/Article/PublicationTypeList/PublicationType"):
                 if pt.text:
                     pub_types.append(pt.text.strip())
-            # DOI / PMCID
+            # DOI / PMCID — ONLY the article's own ids. PubmedData/ReferenceList
+            # holds the ids of the papers it cites; walking the whole record
+            # (``iter("ArticleId")``) stamped the last cited paper's DOI/PMCID
+            # on the article.
             doi = None
             pmcid = None
-            for el in article.iter("ArticleId"):
+            for el in article.findall("PubmedData/ArticleIdList/ArticleId"):
                 idt = (el.attrib.get("IdType") or "").lower()
-                if idt == "doi" and el.text:
+                if idt == "doi" and el.text and not doi:
                     doi = el.text.strip()
-                elif idt == "pmc" and el.text:
+                elif idt == "pmc" and el.text and not pmcid:
                     pmcid = el.text.strip()
                     if not pmcid.upper().startswith("PMC"):
                         pmcid = "PMC" + pmcid
+            if not doi:
+                for el in article.findall("MedlineCitation/Article/ELocationID"):
+                    if (el.attrib.get("EIdType") or "").lower() == "doi" and el.text:
+                        doi = el.text.strip()
+                        break
             # Language
-            lang_el = article.find(".//Language")
+            lang_el = article.find("MedlineCitation/Article/Language")
             language = lang_el.text.strip() if lang_el is not None and lang_el.text else None
             out[pmid] = {
                 "abstractText_xml": abstract,
