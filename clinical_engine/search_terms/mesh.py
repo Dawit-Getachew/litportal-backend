@@ -56,6 +56,10 @@ _UK_US = (
 _GENERIC_HEADS = re.compile(
     r"\s+(?:patients?|people|persons?|individuals?|subjects?|population|populations|adults?|cases)$", re.I,
 )
+# The act of giving something is not part of its heading: "steroid administration"
+# is indexed as Steroids (with /administration & dosage). Tried last, so a heading
+# for the whole phrase ("Fluid Therapy") always wins.
+_ACTION_TAIL = re.compile(r"\s+(?:administration|administering|therapy|therapies|treatment|treatments)$", re.I)
 
 
 def norm(text: str) -> str:
@@ -81,7 +85,8 @@ def variants(term: str) -> list[str]:
     ("trauma patients" → "trauma") names the same concept, not a broader one."""
     base = " ".join((term or "").split()).strip(" .,;:")
     out: list[str] = []
-    for v in (base, _us(base), _singular(_us(base)), _GENERIC_HEADS.sub("", _us(base))):
+    for v in (base, _us(base), _singular(_us(base)), _GENERIC_HEADS.sub("", _us(base)),
+              _ACTION_TAIL.sub("", _us(base))):
         v = v.strip()
         if v and len(v) >= 3 and v.lower() not in {o.lower() for o in out}:
             out.append(v)

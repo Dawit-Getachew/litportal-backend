@@ -108,7 +108,7 @@ def _tokens(text: str) -> list[str]:
 
 
 _STOP = frozenset({"of", "the", "a", "an", "in", "with", "for", "and", "or", "to", "on", "by", "due", "patients",
-                   "patient", "people", "adults", "adult", "use", "therapy", "treatment"})
+                   "patient", "people", "adults", "adult", "use", "therapy", "treatment", "administration"})
 
 
 def _stem(word: str) -> str:
@@ -164,7 +164,7 @@ def plausibly_same(candidate: str, concept: str) -> bool:
 # "whole blood transfusion" is about giving whole blood: a form of the product
 # ("low titer O whole blood") is a form of the concept.
 _ACTION_HEADS = frozenset({
-    "transf", "infusi", "therap", "admini", "supple", "inject", "intake", "prophy", "manage", "use",
+    "transf", "infusi", "therap", "admini", "supple", "inject", "intake", "prophy", "manage", "use", "treatm",
 })
 
 
@@ -188,6 +188,8 @@ def is_bare_product(candidate: str, concept: str) -> bool:
     words = _tokens(concept.replace("-", " "))
     if len(words) < 2 or _stem(words[-1]) not in _ACTION_HEADS:
         return False
+    if any(_stem(w) in _ACTION_HEADS for w in _tokens(candidate.replace("-", " "))):
+        return False  # it names an act of giving too ("steroid therapy")
     return _content(candidate) == _content(concept) - {_stem(words[-1])}
 
 
