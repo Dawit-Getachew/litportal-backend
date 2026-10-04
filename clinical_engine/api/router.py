@@ -228,6 +228,39 @@ async def session_evidence(session_id: str, current_user: dict = Depends(get_cur
     return built
 
 
+@router.get("/sessions/{session_id}/evidence/unlisted", dependencies=[Depends(_enabled)])
+async def session_unlisted(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Papers found but not in the list: not reviewed (beyond the review budget) and held back."""
+    from clinical_engine.retrieval import evidence
+
+    built = await evidence.unlisted_view(current_user, session_id)
+    if built is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "No engine evidence list."})
+    return built
+
+
+@router.post("/sessions/{session_id}/evidence/{publication_id}/review", dependencies=[Depends(_enabled)])
+async def review_paper(session_id: str, publication_id: str, current_user: dict = Depends(get_current_user)):
+    """Review one not-reviewed paper (first look) or excluded paper (second look) on request."""
+    from clinical_engine import store
+    from clinical_engine.contracts.run import TERMINAL_RUN_STATUSES
+    from clinical_engine.retrieval import evidence, review
+
+    run = await store.get_run_for_session(session_id, current_user["id"])
+    pub = next((p for p in await store.publications_for_run(run["id"]) if p["id"] == publication_id), None) \
+        if run and run.get("retrieval_adapter") == "engine" else None
+    if pub is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "No such paper in this search."})
+    if run["status"] not in TERMINAL_RUN_STATUSES:
+        raise HTTPException(status_code=409, detail={"code": "run_active", "message": "Wait until the search finishes."})
+    try:
+        updated = await review.review_one(run, pub, session_id)
+    except review.ReviewError as exc:
+        http_status = {"review_limit": 429, "model_unavailable": 503, "model_failed": 502}.get(exc.code, 409)
+        raise HTTPException(status_code=http_status, detail={"code": exc.code, "message": exc.message}) from exc
+    return evidence.card(updated)
+
+
 @router.post("/sessions/{session_id}/evidence/{publication_id}/access/retry", dependencies=[Depends(_enabled)])
 async def retry_access(session_id: str, publication_id: str, current_user: dict = Depends(get_current_user)):
     """Re-check the full-text routes for one listed paper (e.g. after a failed fetch)."""
@@ -239,7 +272,8 @@ async def retry_access(session_id: str, publication_id: str, current_user: dict 
     run = await store.get_run_for_session(session_id, current_user["id"])
     pub = next((p for p in await store.publications_for_run(run["id"]) if p["id"] == publication_id), None) \
         if run and run.get("retrieval_adapter") == "engine" else None
-    if pub is None or pub.get("section") not in ("main", "other", "more") or pub.get("identity_status") == "quarantined":
+    if pub is None or pub.get("section") not in ("main", "other", "more", "excluded") \
+            or pub.get("identity_status") == "quarantined":
         raise HTTPException(status_code=404, detail={"code": "not_found", "message": "No such listed paper."})
     import os
 

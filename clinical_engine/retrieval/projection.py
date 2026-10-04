@@ -138,6 +138,42 @@ async def upsert_article(article: dict[str, Any]) -> tuple[str, list[str]]:
     return doc["id"], notes
 
 
+def _row(session_id: str, article_id: str, p: dict[str, Any], section: str, position: int) -> dict[str, Any]:
+    adm = p.get("admission") or {}
+    return {
+        "id": uuid.uuid4().hex, "search_session_id": session_id, "article_id": article_id,
+        "relevance_score": _STATE_SCORE.get(adm.get("state"), 50.0), "evidence_design_score": 0.0,
+        "overall_rank": max(1, 10_000 - position),
+        "rank_explanation": adm.get("reason"),
+        "included_by_default": False, "user_included": False,
+        "exclusion_reason": (f"engine:{adm.get('exclusion') or 'excluded'}" if section == "excluded" else None),
+        "query_types_matched": sorted({f"engine_{h['family']}" for h in p.get("hits") or []}),
+        "query_family_matches": sorted({h["family"] for h in p.get("hits") or []}),
+        "sources_present": sorted({LEGACY_SOURCE.get(s, s) for s in p.get("sources") or []}),
+        "flags": [], "created_at": _now(), "updated_at": _now(),
+    }
+
+
+async def place(session_id: str, p: dict[str, Any], *, section: str, position: int) -> dict[str, Any]:
+    """Give one publication its session row after the list was written (a paper reviewed
+    on request), or update the row it has. Returns the fields to store on the publication."""
+    from core.db import Collections, get_db
+
+    rows = get_db()[Collections.SEARCH_SESSION_ARTICLES]
+    if p.get("legacy_row_id"):
+        adm = p.get("admission") or {}
+        await rows.update_one({"id": p["legacy_row_id"], "search_session_id": session_id}, {"$set": {
+            "relevance_score": _STATE_SCORE.get(adm.get("state"), 50.0), "rank_explanation": adm.get("reason"),
+            "exclusion_reason": (f"engine:{adm.get('exclusion') or 'excluded'}" if section == "excluded" else None),
+            "updated_at": _now()}})
+        return {"section": section, "position": position}
+    article_id, notes = await upsert_article(p["article"])
+    row = _row(session_id, article_id, p, section, position)
+    await rows.insert_one(dict(row))
+    return {"section": section, "position": position, "legacy_article_id": article_id, "legacy_row_id": row["id"],
+            "projection_notes": notes}
+
+
 async def project(session_id: str, pubs: list[dict[str, Any]], sections: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     """Write session rows for every listed publication (main, other, more,
     excluded); not-assessed and held-back records stay engine-side."""
@@ -149,21 +185,9 @@ async def project(session_id: str, pubs: list[dict[str, Any]], sections: dict[st
     rows = []
     collisions = 0
     for position, (name, p) in enumerate(order, start=1):
-        adm = p.get("admission") or {}
         article_id, notes = await upsert_article(p["article"])
         collisions += bool(notes)
-        row = {
-            "id": uuid.uuid4().hex, "search_session_id": session_id, "article_id": article_id,
-            "relevance_score": _STATE_SCORE.get(adm.get("state"), 50.0), "evidence_design_score": 0.0,
-            "overall_rank": max(1, 10_000 - position),
-            "rank_explanation": adm.get("reason"),
-            "included_by_default": False, "user_included": False,
-            "exclusion_reason": (f"engine:{adm.get('exclusion') or 'excluded'}" if name == "excluded" else None),
-            "query_types_matched": sorted({f"engine_{h['family']}" for h in p.get("hits") or []}),
-            "query_family_matches": sorted({h["family"] for h in p.get("hits") or []}),
-            "sources_present": sorted({LEGACY_SOURCE.get(s, s) for s in p.get("sources") or []}),
-            "flags": [], "created_at": _now(), "updated_at": _now(),
-        }
+        row = _row(session_id, article_id, p, name, position)
         rows.append(row)
         await store.update_publication(p["id"], {
             "section": name, "position": position, "legacy_article_id": article_id, "legacy_row_id": row["id"],

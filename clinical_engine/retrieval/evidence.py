@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from clinical_engine import store
+from clinical_engine.contracts.run import TERMINAL_RUN_STATUSES
 from clinical_engine.retrieval import registry
 from clinical_engine.retrieval.admission import EXCLUSIONS, ROLE_LABELS, STATE_LABELS
 from clinical_engine.retrieval.portfolio import FAMILY_LABELS, LANE_LABELS
@@ -31,9 +32,11 @@ def _authors(article: dict[str, Any]) -> str:
     return ", ".join(names[:3]) + (" et al." if len(names) > 3 else "")
 
 
-def _access_view(acc: Optional[dict[str, Any]]) -> dict[str, Any]:
+def _access_view(acc: Optional[dict[str, Any]], *, pending: bool = False) -> dict[str, Any]:
     if not acc:
-        return {"status": "checking"}
+        # Access is checked for the listed papers while the run works; any other paper
+        # (further down "More", or excluded) can be checked on request.
+        return {"status": "checking" if pending else "not_checked"}
     acq = acc.get("acquired") or {}
     perm = acc.get("permitted") or {}
     readable = acc.get("readable") or {}
@@ -64,7 +67,7 @@ def _access_view(acc: Optional[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def card(p: dict[str, Any]) -> dict[str, Any]:
+def card(p: dict[str, Any], *, access_pending: bool = False) -> dict[str, Any]:
     a = p.get("article") or {}
     adm = p.get("admission") or {}
     lin = p.get("lineage") or None
@@ -81,6 +84,7 @@ def card(p: dict[str, Any]) -> dict[str, Any]:
         "exclusion_label": EXCLUSIONS.get(adm.get("exclusion") or "", None),
         "role": adm.get("role"), "role_label": ROLE_LABELS.get(adm.get("role") or "", "Study"),
         "method": adm.get("method"), "model_state": adm.get("model_state"), "dimensions": adm.get("dimensions"),
+        "reviewed_on_request": bool(adm.get("reviewed_on_request")), "previous": adm.get("previous"),
         "concepts": adm.get("concepts") or [],
         "lanes": [{"lane": lane, "label": LANE_LABELS.get(lane, lane)} for lane in p.get("lanes") or []],
         "families": [{"family": f, "label": FAMILY_LABELS.get(f, f)} for f in p.get("families") or []],
@@ -88,7 +92,7 @@ def card(p: dict[str, Any]) -> dict[str, Any]:
         "identity": {"status": p.get("identity_status"), "conflicts": p.get("conflicts") or [],
                      "trial_ids": p.get("trial_ids") or [], "notes": p.get("projection_notes") or []},
         "lineage": lin, "newer_evidence": p.get("newer_evidence"),
-        "access": _access_view(p.get("access")),
+        "access": _access_view(p.get("access"), pending=access_pending),
     }
 
 
@@ -114,14 +118,15 @@ async def build_view(user: dict, session_id: str) -> Optional[dict[str, Any]]:
     queries = await store.queries_for_run(run["id"])
     progress = run.get("progress") or {}
     listed = "project" in out
+    pending = run["status"] not in TERMINAL_RUN_STATUSES and progress.get("stage") != "done"
     sections: dict[str, list[dict[str, Any]]] = {k: [] for k in
                                                  ("main", "other", "more", "excluded", "held_back", "not_assessed")}
     if listed:
         for p in sorted(pubs, key=lambda x: (x.get("position") or 10**6)):
             if p.get("section") in sections and p.get("section") != "not_assessed":
-                sections[p["section"]].append(card(p))
+                sections[p["section"]].append(card(p, access_pending=pending))
         sections["not_assessed"] = []  # counted, not listed
-    guideline_cards = [card(p) for p in pubs
+    guideline_cards = [card(p, access_pending=pending) for p in pubs
                        if (p.get("admission") or {}).get("role") == "guideline" and (p.get("lineage") or {}).get("lead")]
     guideline_cards.sort(key=lambda c: ({"current": 0, "older_than_window": 1, "superseded": 2}.get(
         (c["lineage"] or {}).get("currency"), 1), -((c["lineage"] or {}).get("edition_year") or 0)))
@@ -166,4 +171,42 @@ async def build_view(user: dict, session_id: str) -> Optional[dict[str, Any]]:
         "admission": (out.get("admit") or {}).get("admission"),
         "access": (out.get("access") or {}).get("access"),
         "usage": run.get("usage") or {},
+    }
+
+
+def _compact(p: dict[str, Any]) -> dict[str, Any]:
+    from clinical_engine.retrieval.admission import design_lane, priority
+
+    a = p.get("article") or {}
+    return {
+        "id": p["id"], "title": a.get("title"), "year": a.get("publication_year"), "journal": a.get("journal"),
+        "authors": _authors(a), "pmid": a.get("pmid"), "doi": a.get("doi"),
+        "publication_types": (a.get("publication_types_json") or [])[:4],
+        "families": [{"family": f, "label": FAMILY_LABELS.get(f, f)} for f in p.get("families") or []],
+        "sources": p.get("sources") or [], "search_strength": round(priority(p), 2),
+        "strong_design": design_lane(p), "conflicts": p.get("conflicts") or [],
+    }
+
+
+async def unlisted_view(user: dict, session_id: str) -> Optional[dict[str, Any]]:
+    """Papers found but not in the list: never reviewed by the model (beyond the review
+    budget — unscreened, not rejected) and held back (identifiers disagree). Excluded
+    papers are in the evidence view with their reasons. Strong designs come first."""
+    run = await store.get_run_for_session(session_id, user["id"])
+    if run is None or run.get("retrieval_adapter") != "engine":
+        return None
+    pubs = await store.publications_for_run(run["id"])
+    from clinical_engine.retrieval.admission import design_lane, priority
+
+    not_reviewed = sorted((p for p in pubs if p.get("section") == "not_assessed"
+                           and (p.get("admission") or {}).get("state") == "not_assessed"),
+                          key=lambda p: (not design_lane(p), -priority(p)))
+    held_back = [p for p in pubs if p.get("identity_status") == "quarantined"]
+    return {
+        "session_id": session_id,
+        "not_reviewed": [_compact(p) for p in not_reviewed],
+        "held_back": [_compact(p) for p in held_back],
+        "counts": {"not_reviewed": len(not_reviewed), "held_back": len(held_back),
+                   "excluded": sum(1 for p in pubs if p.get("section") == "excluded"),
+                   "reviewed_on_request": sum(1 for p in pubs if (p.get("admission") or {}).get("reviewed_on_request"))},
     }
