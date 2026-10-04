@@ -239,6 +239,35 @@ def test_default_on_is_conservative():
     assert not default_on("equivalent", "glucocorticoid therapy", "steroid administration", "model")
     assert not default_on("equivalent", "whole blood administration", wb, "model")
     assert not default_on("equivalent", "steroid", "steroid administration", "model")  # the bare product
+    # Stage words: "T3 prostate cancer" / "cT3 prostate cancer" = "stage T3 prostate cancer"; the bare
+    # disease and "locally advanced" are broader and stay off.
+    t3 = "stage T3 prostate cancer"
+    assert default_on("equivalent", "T3 prostate cancer", t3, "model")
+    assert default_on("equivalent", "cT3 prostate cancer", t3, "model")
+    assert not default_on("equivalent", "prostate cancer", t3, "model")
+    assert not default_on("equivalent", "locally advanced prostate cancer", t3, "model")
+
+
+def test_staged_condition_becomes_disease_and_stage_concepts():
+    from clinical_engine.search_terms.builder import _stage_split
+
+    disease, stage, notes = _stage_split("stage T3 prostate cancer")
+    assert (disease, stage) == ("prostate cancer", "stage T3")
+    assert {"T3", "cT3", "pT3", "T3a", "pT3b"} <= set(notes)
+    assert _stage_split("cT3a prostate cancer")[1] == "stage T3a"
+    assert _stage_split("stage III colon cancer")[:2] == ("colon cancer", "stage III")
+    assert "stage 3" in _stage_split("stage III colon cancer")[2]
+    for plain in ("septic shock", "type 2 diabetes", "T cell lymphoma", "hemorrhagic shock"):
+        assert _stage_split(plain) is None
+
+
+def test_stage_modifiers_offer_the_disease_heading():
+    from clinical_engine.search_terms.builder import _MODIFIERS
+
+    assert _MODIFIERS.sub("", "stage T3 prostate cancer").strip() == "prostate cancer"
+    assert _MODIFIERS.sub("", "cT3N0 prostate cancer").strip() == "prostate cancer"
+    assert _MODIFIERS.sub("", "stage IV breast cancer").strip() == "breast cancer"
+    assert _MODIFIERS.sub("", "severe COVID-19").strip() == "COVID-19"
 
 
 def test_mesh_lookup_forms_drop_the_act_of_giving_last():
@@ -247,6 +276,8 @@ def test_mesh_lookup_forms_drop_the_act_of_giving_last():
     assert mesh.variants("steroid administration") == ["steroid administration", "steroid"]
     assert mesh.variants("fluid therapy")[0] == "fluid therapy"  # the whole phrase is tried first
     assert mesh.variants("whole blood transfusion") == ["whole blood transfusion"]
+    clause = "septic shock who continue to require vasopressors after initial resuscitation"
+    assert mesh.variants(clause) == [clause, "septic shock"]  # a clause about the patients is not the heading
 
 
 def test_model_output_is_validated():

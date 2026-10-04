@@ -173,6 +173,27 @@ def clean_element(role: str, value: str) -> tuple[Optional[str], str]:
     return role, value
 
 
+# "septic shock who continue to require vasopressors after initial resuscitation": the clause says
+# WHICH patients, it is not part of the condition. The condition is the head noun phrase; the clause
+# becomes a population qualifier (step 2 ranks by it; it never has to appear verbatim in a paper).
+_PATIENT_CLAUSE = re.compile(
+    r"(?i)^(?P<head>[^,;]{3,60}?)\s+(?P<tail>(?:who|whose|in whom|requiring|receiving|undergoing|treated with|despite)"
+    r"\b.+)$"
+)
+
+
+_PEOPLE_HEAD = re.compile(r"(?i)^(?:the\s+|all\s+)?(?:patients?|people|persons?|adults?|children|individuals?|"
+                          r"subjects?|those|men|women|cases)$")
+
+
+def split_patient_clause(value: str) -> tuple[str, Optional[str]]:
+    """(condition, the clause about the patients or None)."""
+    m = _PATIENT_CLAUSE.match(value.strip())
+    if not m or len(m.group("head").split()) > 6 or _PEOPLE_HEAD.match(m.group("head").strip()):
+        return value, None
+    return m.group("head").strip(), m.group("tail").strip()
+
+
 def quote_in_question(quote: str, question: str) -> bool:
     q = _norm(quote)
     return bool(q) and f" {q} " in f" {_norm(question)} "
@@ -266,6 +287,9 @@ def validate_model_output(question: str, raw: dict[str, Any]) -> ModelReading:
         if cleaned_role is None or not value:
             continue
         role = cleaned_role
+        patient_clause = None
+        if role == "condition":
+            value, patient_clause = split_patient_clause(value)
         if role == "age_group":
             mapped = _AGE_SYNONYMS.get(value.lower(), value.lower())
             if mapped not in AGE_GROUPS:
@@ -276,7 +300,9 @@ def validate_model_output(question: str, raw: dict[str, Any]) -> ModelReading:
         span = None
         if stated:
             quote = (item.quote or "").strip()
-            if quote and quote_in_question(quote, question):
+            if patient_clause and quote_in_question(value, question):
+                span = value
+            elif quote and quote_in_question(quote, question):
                 span = quote
             elif quote_in_question(value, question):
                 span = value
@@ -299,6 +325,13 @@ def validate_model_output(question: str, raw: dict[str, Any]) -> ModelReading:
             confidence=0.85 if stated else 0.5,
             importance=item.importance if role == "outcome" else None,
         ))
+        if patient_clause:
+            in_text = stated and quote_in_question(patient_clause, question)
+            elements.append(QuestionElement(
+                role="population", value=re.sub(r"(?i)^(?:who|whose|in whom)\s+", "", patient_clause)[:120],
+                source="user_text" if in_text else "ai_inferred", active=in_text,
+                span_text=patient_clause if in_text else None, confidence=0.8 if in_text else 0.5,
+            ))
         if len(elements) >= MAX_ELEMENTS:
             break
     ambiguities = [" ".join(a.split())[:160] for a in parsed.ambiguities if a and a.strip()][:4]

@@ -60,6 +60,10 @@ _GENERIC_HEADS = re.compile(
 # is indexed as Steroids (with /administration & dosage). Tried last, so a heading
 # for the whole phrase ("Fluid Therapy") always wins.
 _ACTION_TAIL = re.compile(r"\s+(?:administration|administering|therapy|therapies|treatment|treatments)$", re.I)
+# A clause about the patients is not part of the heading either ("septic shock who continue to
+# require vasopressors…" is indexed as Shock, Septic). Also tried last.
+_PATIENT_CLAUSE = re.compile(r"\s+(?:who|whose|in whom|requiring|receiving|undergoing|treated with|despite)\b.*$",
+                             re.I)
 
 
 def norm(text: str) -> str:
@@ -86,7 +90,7 @@ def variants(term: str) -> list[str]:
     base = " ".join((term or "").split()).strip(" .,;:")
     out: list[str] = []
     for v in (base, _us(base), _singular(_us(base)), _GENERIC_HEADS.sub("", _us(base)),
-              _ACTION_TAIL.sub("", _us(base))):
+              _ACTION_TAIL.sub("", _us(base)), _PATIENT_CLAUSE.sub("", _us(base))):
         v = v.strip()
         if v and len(v) >= 3 and v.lower() not in {o.lower() for o in out}:
             out.append(v)

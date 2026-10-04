@@ -133,7 +133,10 @@ def check(plan: dict[str, Any], portfolio: dict[str, Any], *,
     # 3. Subject headings
     sh: list[dict[str, str]] = []
     for c in required:
-        if c.get("mesh"):
+        if c.get("role") == "stage":
+            sh.append(_check("pass", f"'{c['term']}': a stage has no MeSH heading — its standard notations are "
+                                     "searched as words."))
+        elif c.get("mesh"):
             sh.append(_check("pass", f"'{c['term']}' → MeSH '{c['mesh']}' (with its narrower headings) OR words."))
         elif c.get("broader_mesh"):
             sh.append(_check("info", f"'{c['term']}': only a broader MeSH heading ('{c['broader_mesh']}') exists; it is "

@@ -108,7 +108,8 @@ def _tokens(text: str) -> list[str]:
 
 
 _STOP = frozenset({"of", "the", "a", "an", "in", "with", "for", "and", "or", "to", "on", "by", "due", "patients",
-                   "patient", "people", "adults", "adult", "use", "therapy", "treatment", "administration"})
+                   "patient", "people", "adults", "adult", "use", "therapy", "treatment", "administration",
+                   "stage"})
 
 
 def _stem(word: str) -> str:
@@ -116,8 +117,12 @@ def _stem(word: str) -> str:
     return w[:6]
 
 
+# TNM: clinical (cT3) and pathological (pT3) T3 are both "T3" to a question that does not say which.
+_TNM_PREFIX = re.compile(r"^[cp](t[0-4][a-c]?)$")
+
+
 def _content(text: str) -> set[str]:
-    return {_stem(w) for w in _tokens(text.replace("-", " ")) if w not in _STOP}
+    return {_stem(_TNM_PREFIX.sub(r"\1", w)) for w in _tokens(text.replace("-", " ")) if w not in _STOP}
 
 
 def _is_acronym(text: str) -> bool:

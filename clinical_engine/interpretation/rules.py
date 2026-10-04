@@ -268,7 +268,14 @@ def _condition_from_population(pop: str) -> tuple[Optional[str], Optional[str]]:
     head = re.split(r"(?i)\s+(?:in|among|for)\s+(?=(?:\w+\s+){0,3}(?:patients?|people|adults?|children|infants?|neonates?|women|men|individuals?)\b)", pop)[0]
     m = _WITH_CONDITION.search(head)
     if m:
-        return _strip(_remove_settings(m.group("c"))) or None, None
+        cond = _strip(_remove_settings(m.group("c"))) or None
+        if not cond:
+            return None, None
+        # "septic shock who continue to require vasopressors…": the clause says which patients.
+        from clinical_engine.interpretation.model_reading import split_patient_clause
+
+        cond, clause = split_patient_clause(cond)
+        return cond, (_strip(re.sub(r"(?i)^(?:who|whose|in whom)\s+", "", clause)) if clause else None)
     head = _remove_settings(head)
     if not head:
         return None, None

@@ -94,6 +94,37 @@ def _population_term(value: str, others: list[str]) -> str | None:
     return v
 
 
+# "stage T3 prostate cancer": papers write the stage many ways ("(cT3) prostate cancer", "clinical
+# stage T3", "T3-4 N0 M0", "locally advanced (T3)"), so the disease and the stage are two concepts,
+# both required: the disease keeps its MeSH heading, the stage is its standard notations (never a MeSH
+# lookup — "T3" is also triiodothyronine).
+_STAGED = re.compile(
+    r"(?i)^(?:(?:clinical|clinically|pathological|pathologically)\s+)?(?:stage\s+)?"
+    r"(?:(?P<pfx>[cp])?t(?P<t>[0-4])(?P<tsub>[a-c])?(?:n[0-3x])?(?:m[01x])?|(?P<roman>iv|i{1,3})(?P<rsub>[a-c])?)"
+    r"\s+(?P<disease>[a-z][\w' -]{2,60})$"
+)
+_ROMAN = {"i": 1, "ii": 2, "iii": 3, "iv": 4}
+
+
+def _stage_split(term: str) -> Optional[tuple[str, str, list[str]]]:
+    """(disease, stage concept, its notations) or None."""
+    m = _STAGED.match(term.strip())
+    if not m or not re.search(r"(?i)\bstage\b|\b[cp]?t[0-4]", term) or len(m.group("disease").split()) > 5:
+        return None
+    if m.group("t"):
+        n, sub = m.group("t"), (m.group("tsub") or "").lower()
+        subs = [sub] if sub else ["", "a", "b"]
+        notes = [f"{p}T{n}{x}" for x in subs for p in ("", "c", "p")] + [f"stage T{n}{sub}"]
+        if n in ("3", "4"):  # T3–T4 is what "locally advanced" means for most solid tumours
+            notes.append("locally advanced")
+        return m.group("disease").strip(), f"stage T{n}{sub}", notes
+    roman, sub = m.group("roman").lower(), (m.group("rsub") or "").upper()
+    num = _ROMAN[roman]
+    subs = [sub] if sub else ["", "A", "B", "C"]
+    notes = [f"stage {roman.upper()}{x}" for x in subs] + [f"stage {num}{x}" for x in subs]
+    return m.group("disease").strip(), f"stage {roman.upper()}{sub}", notes
+
+
 def concepts_from_map(cqm: ClinicalQuestionMap) -> list[TermConcept]:
     out: list[TermConcept] = []
     seen: set[tuple[str, str]] = set()
@@ -112,6 +143,19 @@ def concepts_from_map(cqm: ClinicalQuestionMap) -> list[TermConcept]:
                 continue
             seen.add(key)
             required = _required(role, cqm.question_type) and not (role == "population" and has_condition)
+            staged = _stage_split(term) if role in ("condition", "presentation") else None
+            if staged:
+                disease, stage, notations = staged
+                out.append(TermConcept(
+                    element_id=e.id, role=role, label=role_label(role, cqm.framework, cqm.question_type),
+                    term=disease, required=required,
+                ))
+                out.append(TermConcept(
+                    element_id=e.id, role="stage", label="Stage", term=stage, required=required,
+                    terms=[Term(text=t, kind="equivalent", source="vocabulary", enabled=True)
+                           for t in notations if t.lower() != stage.lower()],
+                ))
+                continue
             out.append(TermConcept(
                 element_id=e.id, role=role, label=role_label(role, cqm.framework, cqm.question_type),
                 term=term, required=required,
@@ -127,11 +171,14 @@ _QUALITATIVE_WORDS = (
     "thematic analysis",
 )
 _EXPERIENCE = re.compile(r"(?i)\b(experiences?|perceptions?|perspectives?|views?|attitudes?|beliefs?|lived)\b")
-# Severity / certainty modifiers: "severe COVID-19" has no heading of its own, "COVID-19" does.
+# Severity / certainty / stage modifiers: "severe COVID-19" or "stage T3 prostate cancer" has no
+# heading of its own, "COVID-19" / "prostate cancer" does (offered switched off: broader).
 _MODIFIERS = re.compile(
     r"(?i)^(?:(?:severe|mild|moderate|moderate-to-severe|critical|acute|chronic|early|late|advanced|"
     r"recurrent|refractory|suspected|confirmed|presumed|hospitali[sz]ed|symptomatic|asymptomatic|"
-    r"uncomplicated|complicated)\s+)+"
+    r"uncomplicated|complicated|locally advanced|metastatic|non-?metastatic|localized|localised|"
+    r"high-?risk|intermediate-?risk|low-?risk|early-?stage|advanced-?stage|clinical|pathological|"
+    r"stage\s+(?:[ctp]?t[0-4][a-c]?|[0-4][a-c]?|iv|i{1,3}[a-c]?)|[cp]?t[0-4][a-c]?(?:n[0-3x])?(?:m[01x])?)\s+)+"
 )
 
 
@@ -144,7 +191,7 @@ async def build_search_terms(
     meta = MappingMeta()
     warnings: list[str] = []
 
-    lookup = await mesh.lookup_many([c.term for c in concepts], timeout_s=settings.MESH_TIMEOUT_S,
+    lookup = await mesh.lookup_many([c.term for c in concepts if c.role != "stage"], timeout_s=settings.MESH_TIMEOUT_S,
                                     transport=mesh_transport) if concepts else mesh.LookupResult(status="not_needed")
     meta.mesh = "unavailable" if lookup.status == "unavailable" else ("ncbi" if concepts else "not_needed")
     if lookup.status == "unavailable":
@@ -153,7 +200,7 @@ async def build_search_terms(
     # No exact heading: offer the heading of the unmodified concept, switched off
     # ("severe COVID-19" → COVID-19 would also find non-severe cases).
     broader_forms = {c.term: _MODIFIERS.sub("", c.term).strip() for c in concepts
-                     if lookup.records.get(c.term) is None}
+                     if c.role != "stage" and lookup.records.get(c.term) is None}
     broader_forms = {k: v for k, v in broader_forms.items() if v and v.lower() != k.lower()}
     broader = (await mesh.lookup_many(sorted(set(broader_forms.values())), timeout_s=settings.MESH_TIMEOUT_S,
                                       transport=mesh_transport)
@@ -204,7 +251,11 @@ async def build_search_terms(
                             "listed switched off. Turn on the ones you want.")
 
     for c in concepts:
+        have = {mesh.norm(t.text) for t in c.terms} | {mesh.norm(c.term)}
         for p in proposed.get(c.id, []):
+            if mesh.norm(p.text) in have:
+                continue
+            have.add(mesh.norm(p.text))
             enabled = meta.synonyms == "model" and p.kind in DEFAULT_ON_KINDS and default_on(
                 p.kind, p.text, c.term, p.source)
             c.terms.append(Term(text=p.text, kind=p.kind, source=p.source, enabled=enabled))  # type: ignore[arg-type]

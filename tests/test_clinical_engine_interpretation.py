@@ -161,6 +161,29 @@ async def test_prevention_outcome_is_not_also_a_condition():
     assert result.map.summary.startswith("Prevention of delirium with early mobilization")
 
 
+def test_a_clause_about_the_patients_is_not_part_of_the_condition():
+    q = ("In adults with septic shock who continue to require vasopressors after initial resuscitation, "
+         "what is the evidence that corticosteroids improve outcomes?")
+    out = validate_model_output(q, {"question_type": "treatment", "elements": [
+        {"role": "condition", "value": "septic shock who continue to require vasopressors after initial resuscitation",
+         "stated": True, "quote": "septic shock who continue to require vasopressors after initial resuscitation"},
+        {"role": "intervention", "value": "corticosteroids", "stated": True, "quote": "corticosteroids"},
+    ]})
+    by_role = {e.role: e for e in out.elements}
+    assert by_role["condition"].value == "septic shock" and by_role["condition"].span_text == "septic shock"
+    pop = by_role["population"]
+    assert pop.value == "continue to require vasopressors after initial resuscitation" and pop.active
+    # The deterministic reader (used when the model files the condition elsewhere) splits it too.
+    r = {(e.role, e.value) for e in rules.read(q).elements}
+    assert ("condition", "septic shock") in r
+    assert ("population", "continue to require vasopressors after initial resuscitation") in r
+    # A head that is only "patients" is not split.
+    out = validate_model_output("Do patients receiving dialysis benefit?", {"question_type": "treatment", "elements": [
+        {"role": "condition", "value": "patients receiving dialysis", "stated": True,
+         "quote": "patients receiving dialysis"}]})
+    assert [e.value for e in out.elements if e.role == "condition"] == ["patients receiving dialysis"]
+
+
 def test_schema_invalid_model_output():
     assert validate_model_output(Q, {"elements": "nope"}).rejected == ["schema_invalid"]
 
