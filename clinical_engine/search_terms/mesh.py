@@ -70,6 +70,11 @@ def norm(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split())
 
 
+def without_action(term: str) -> str:
+    """The treatment without the act of giving it: "corticosteroid administration" → "corticosteroid"."""
+    return _ACTION_TAIL.sub("", (term or "").strip()).strip()
+
+
 def _us(text: str) -> str:
     out = text.lower()
     for uk, us in _UK_US:

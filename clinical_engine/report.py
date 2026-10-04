@@ -274,10 +274,12 @@ async def _engine_report(run: dict, version: dict, session: dict, cqm: ClinicalQ
     query's status, the source's hit count, records read, whether the result was
     cut at the budget, and PubMed's own translation. No padding: what is listed
     is what qualified."""
-    from clinical_engine.retrieval.portfolio import FAMILY_LABELS
+    from clinical_engine.retrieval.portfolio import FAMILY_LABELS, in_planned_order
 
     legacy_src = {"pubmed": "pubmed", "europepmc": "europe_pmc"}
-    ledger = await store.queries_for_run(run["id"])
+    tasks = {t["key"]: (t.get("output") or {}) for t in await store.get_tasks(run["id"]) if t.get("status") == "succeeded"}
+    retrieve = tasks.get("retrieve") or {}
+    ledger = in_planned_order(await store.queries_for_run(run["id"]), retrieve.get("portfolio"))
     pubs = await store.publications_for_run(run["id"])
     found: dict[str, int] = {}
     for p in pubs:
@@ -299,8 +301,6 @@ async def _engine_report(run: dict, version: dict, session: dict, cqm: ClinicalQ
             "translation": q.get("translation"), "warnings": q.get("warnings") or [],
         })
     ordered = list(families.values())
-    tasks = {t["key"]: (t.get("output") or {}) for t in await store.get_tasks(run["id"]) if t.get("status") == "succeeded"}
-    retrieve = tasks.get("retrieve") or {}
     alt = retrieve.get("alternative") or {}
     not_run = []
     if alt.get("available") and not alt.get("ran"):

@@ -12,7 +12,7 @@ from clinical_engine import store
 from clinical_engine.contracts.run import TERMINAL_RUN_STATUSES
 from clinical_engine.retrieval import registry
 from clinical_engine.retrieval.admission import EXCLUSIONS, ROLE_LABELS, STATE_LABELS
-from clinical_engine.retrieval.portfolio import FAMILY_LABELS, LANE_LABELS
+from clinical_engine.retrieval.portfolio import FAMILY_LABELS, LANE_LABELS, in_planned_order
 from clinical_engine.retrieval.run import SOURCE_LABELS
 
 STAGES = [
@@ -115,7 +115,7 @@ async def build_view(user: dict, session_id: str) -> Optional[dict[str, Any]]:
     tasks = {t["key"]: t for t in await store.get_tasks(run["id"])}
     out = {k: (t.get("output") or {}) for k, t in tasks.items() if t.get("status") == "succeeded"}
     pubs = await store.publications_for_run(run["id"])
-    queries = await store.queries_for_run(run["id"])
+    queries = in_planned_order(await store.queries_for_run(run["id"]), (out.get("retrieve") or {}).get("portfolio"))
     progress = run.get("progress") or {}
     listed = "project" in out
     pending = run["status"] not in TERMINAL_RUN_STATUSES and progress.get("stage") != "done"

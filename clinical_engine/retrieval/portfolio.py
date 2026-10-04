@@ -136,6 +136,17 @@ LANE_LABELS = {
     "alternative": "Wider alternative",
     "update": "Newer evidence",
 }
+_SOURCE_ORDER = {"pubmed": 0, "europepmc": 1}
+
+
+def in_planned_order(ledger: list[dict[str, Any]], planned: Optional[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Executed queries in the portfolio's own order (main search first; PubMed, then
+    Europe PMC), not the order they happened to finish in. Searches added during the
+    run (the update search) follow, PubMed first."""
+    index = {s.get("id"): i for i, s in enumerate(planned or [])}
+    return sorted(ledger, key=lambda q: (index.get(q.get("spec_id"), len(index)),
+                                         _SOURCE_ORDER.get(q.get("source"), len(_SOURCE_ORDER))))
+
 
 _STOP = frozenset("""
 a an the of in on for to with among and or by at from as into is are was were be been being does do did can could

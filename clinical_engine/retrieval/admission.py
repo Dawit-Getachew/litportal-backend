@@ -35,6 +35,7 @@ from typing import Any, Optional
 
 from clinical_engine.config import settings
 from clinical_engine.gateway import ModelCallResult, ModelGateway
+from clinical_engine.search_terms.mesh import without_action
 from services import engine_concept_plan as ecp
 
 STATES = ("direct", "broad_answering", "supportive", "indirect", "uncertain", "excluded")
@@ -67,6 +68,7 @@ MAIN_LIMIT = 15
 MAIN_GUIDELINES = 3
 OTHER_LIMIT = 5
 MATCH = ("match", "broader", "narrower", "related", "different", "unclear", "na")
+SUBJECTS = ("humans", "animals", "laboratory", "unclear")
 
 _NEG_CUE = re.compile(r"(?:\bno\b|\bnot\b|\bnon[- ]?|\bwithout\b|\babsence of\b|\bfree of\b|\bexcluding\b|"
                       r"\bexcept\b|\bnegative for\b)\W*(?:\w+\W+){0,2}$", re.I)
@@ -114,6 +116,10 @@ Rules:
   opinion — is at most "supportive" (except for background questions — see "How to read the dimensions");
   give it role "narrative_review".
 - Read negation carefully ("patients without diabetes" is a different population from diabetes).
+- "subjects" says who or what was studied: "humans" (patients or volunteers — also when animals or cells are
+  studied alongside them), "animals" (including veterinary), "laboratory" (cells, tissue or in-vitro work only),
+  or "unclear". For a question about patients an animal or laboratory-only study is "excluded" with exclusion
+  "animal_or_lab", not "indirect"; for a background or mechanism question it may be "supportive".
 - A secondary, post hoc or subgroup report is at most "supportive" unless the question is about that subgroup.
 - Use the deterministic signals given with each candidate; do not contradict a signal marked "certain".
 
@@ -125,6 +131,7 @@ For each candidate return:
  "comparison": "match|broader|narrower|related|different|unclear|na",
  "outcome": "match|broader|narrower|related|different|unclear|na",
  "setting": "match|broader|narrower|related|different|unclear|na",
+ "subjects": "humans|animals|laboratory|unclear",
  "role": "primary_result|secondary_analysis|subgroup_analysis|follow_up|protocol|guideline|systematic_review|meta_analysis|narrative_review|commentary|correction|case_report|other",
  "state": "direct|broad_answering|supportive|indirect|uncertain|excluded",
  "exclusion": null or one of the exclusion codes above,
@@ -322,11 +329,17 @@ def signals(pub: dict[str, Any], plan: dict[str, Any], *, primary_trials: set[st
         out["concepts"].append({"term": c["term"], "role": c.get("role"), "in_text": negated is not None,
                                 "by_mesh": by_mesh, "only_negated": bool(negated)})
     title_low = (art.get("title") or "").lower()
+    # Same-meaning wordings offered but left off do not search, but a title using one still names the
+    # treatment ("Corticosteroids in Sepsis" for "steroid administration"), as does a wording without the
+    # act of giving it ("corticosteroid" for "corticosteroid administration").
+    named = {w for c in plan["concepts"] if c.get("required") and c.get("role") in (
+                 "intervention", "exposure", "index_test", "prognostic_factor", "phenomenon", "concept")
+             for w in ecp.concept_words(c, plan) + [o["text"] for o in c.get("off_equivalents") or []]
+             + ([c["mesh"]] if c.get("mesh") else [])}
+    named |= {without_action(w) for w in named}
     out["names_intervention"] = any(
         re.search(r"(?<![a-z0-9])" + re.escape(re.sub(r"s$", "", w.lower())), title_low)
-        for c in plan["concepts"] if c.get("required") and c.get("role") in (
-            "intervention", "exposure", "index_test", "prognostic_factor", "phenomenon", "concept")
-        for w in ecp.concept_words(c, plan) + ([c["mesh"]] if c.get("mesh") else []))
+        for w in named if len(w) >= 3)
     neg = [c for c in out["concepts"] if c["only_negated"] and not c["by_mesh"]
            and c["role"] in ("condition", "population", "presentation")]
     if neg and not out["certain_exclusion"]:
@@ -363,21 +376,28 @@ def priority(pub: dict[str, Any]) -> float:
 
 
 # Searches that AND every "must appear" concept (PubMed checked the record against all of them,
-# MeSH explosion included); the relaxed alternative and the free-wording search do not.
+# MeSH explosion included), and the clinician's own wording (every content word of the question);
+# the relaxed alternative does not.
 _ALL_CONCEPT_FAMILIES = frozenset({"main", "narrow", "broad", "guidelines", "systematic_reviews", "reviews",
-                                   "cochrane", "recent", "update", "long_term", "landmark"})
+                                   "cochrane", "recent", "update", "long_term", "landmark", "original_wording"})
 _DESIGN_TYPES = frozenset({
     "randomized controlled trial", "controlled clinical trial", "clinical trial", "clinical trial, phase ii",
     "clinical trial, phase iii", "clinical trial, phase iv", "pragmatic clinical trial", "equivalence trial",
     "multicenter study", "observational study", "meta-analysis", "systematic review", "practice guideline",
     "guideline",
 })
+# A record MEDLINE has not indexed yet has no design type ("Journal Article" only); its title says what it is.
+_TITLE_DESIGN = re.compile(r"\b(?:systematic review|meta-?analys[ie]s|randomi[sz]ed|trial|guidelines?)\b", re.I)
 
 
 def design_lane(pub: dict[str, Any]) -> bool:
-    """A trial, systematic review or guideline that every approved concept matched."""
-    types = {t.lower() for t in (pub.get("article") or {}).get("publication_types_json") or []}
-    return bool(types & _DESIGN_TYPES) and bool(set(_family_ranks(pub)) & _ALL_CONCEPT_FAMILIES)
+    """A trial, systematic review or guideline that every approved concept (or every word of the
+    clinician's own question) matched. A record not yet indexed counts by its title."""
+    art = pub.get("article") or {}
+    types = {t.lower() for t in art.get("publication_types_json") or []}
+    design = bool(types & _DESIGN_TYPES) or (types <= {"journal article"}
+                                             and bool(_TITLE_DESIGN.search(art.get("title") or "")))
+    return design and bool(set(_family_ranks(pub)) & _ALL_CONCEPT_FAMILIES)
 
 
 def aggregated_priority(pub: dict[str, Any]) -> float:
@@ -442,7 +462,8 @@ def policy_state(dims: dict[str, str], model_state: str, model_excl: Optional[st
       population different / any core related → indirect
       comparison or outcome different        → supportive (when the question names no
                                                comparator, any non-matching comparison is
-                                               a head-to-head study → supportive)
+                                               a head-to-head study → supportive; not for
+                                               a guideline's broader or narrower comparison)
       outcome related (a surrogate or nearby
         outcome, not the one asked)          → supportive (not for guidelines: they
                                                recommend, they do not report outcomes)
@@ -491,8 +512,10 @@ def _policy_state(dims: dict[str, str], model_state: str, model_excl: Optional[s
         return "indirect", None
     if dims["intervention"] == "na" and not na_intervention_ok:
         return "indirect", None  # the paper does not study the asked treatment / exposure / test
+    # A guideline's recommendations span regimens and comparators: with no comparator asked, its
+    # broader or narrower comparison does not make it a head-to-head study.
     head_to_head = dims["comparison"] in ("different", "related") or (
-        not comparator_stated and dims["comparison"] in ("narrower", "broader"))
+        not comparator_stated and not guideline and dims["comparison"] in ("narrower", "broader"))
     if head_to_head or dims["outcome"] == "different" or (dims["outcome"] == "related" and not guideline):
         return "supportive", None
     if "narrower" in (dims["population"], dims["condition"]):
@@ -532,6 +555,7 @@ def validate_items(data: Any, ids: list[str], *, comparator_stated: bool = True,
             "state": state, "model_state": model_state, "exclusion": excl, "reason": reason or STATE_LABELS[state],
             "role": it.get("role") if it.get("role") in ROLES else None,
             "dimensions": dims,
+            "subjects": it.get("subjects") if it.get("subjects") in SUBJECTS else "unclear",
             "confidence": it.get("confidence") if it.get("confidence") in ("high", "medium", "low") else "low",
         }
     return out
@@ -577,7 +601,8 @@ def stated_dimensions(elements: dict[str, list[str]]) -> frozenset[str]:
 def finalize(sig: dict[str, Any], judged: Optional[dict[str, Any]], *, method: str,
              narrative_ok: bool = False, has_abstract: bool = True) -> dict[str, Any]:
     """Combine deterministic signals and the model's judgment. Signals can only
-    make the state stricter."""
+    make the state stricter. ``narrative_ok`` marks a background question: a narrative
+    review may answer it, and animal or laboratory work may support it."""
     if sig.get("certain_exclusion"):
         code = sig["certain_exclusion"]
         return {"state": "excluded", "exclusion": code, "reason": EXCLUSIONS[code], "role": sig["role"],
@@ -596,6 +621,14 @@ def finalize(sig: dict[str, Any], judged: Optional[dict[str, Any]], *, method: s
     if sig.get("negated_condition") and out["state"] in QUALIFYING + ("supportive",):
         out.update(state="excluded", exclusion="wrong_population",
                    reason=f"Studies patients without {sig['negated_condition']}.")
+    if judged.get("subjects") in ("animals", "laboratory") and out["state"] != "excluded":
+        # Records not yet MeSH-indexed escape the search's animal filter; the model names the subjects.
+        what = "Animal" if judged["subjects"] == "animals" else "Laboratory"
+        if not narrative_ok:
+            out.update(state="excluded", exclusion="animal_or_lab",
+                       reason=f"{what} study — the question is about patients. " + (judged.get("reason") or ""))
+        elif out["state"] in QUALIFYING:
+            out.update(state="supportive", reason=f"{what} study. " + (judged.get("reason") or ""))
     if out.get("role") == "case_report" and out["state"] in QUALIFYING:
         out.update(state="supportive", reason="Case report — it cannot show the effect on its own. "
                                               + (judged.get("reason") or ""))
@@ -658,8 +691,10 @@ def assign_sections(pubs: list[dict[str, Any]], *, newest_first: bool = False) -
             return (0, _CURRENCY_ORDER.get(lin.get("currency"), 1), specific, -(lin.get("edition_year") or year), state)
         if role in ("systematic_review", "meta_analysis"):
             # Newest cumulative evidence first (no age window for reviews): a newer review that
-            # answers more broadly usually contains the older direct ones' trials and more.
-            return (1, -year, state)
+            # answers more broadly usually contains the older direct ones' trials and more — but a
+            # direct answer leads a broader review up to two years newer; at equal standing the
+            # stronger search match first.
+            return (1, -(year + (2 if adm.get("state") == "direct" else 0)), -priority(p), state)
         if newest_first:
             return (2 + _TYPE_ORDER.get(role, 3), state, -year, -priority(p))
         return (2 + _TYPE_ORDER.get(role, 3), state, -priority(p), -year)
