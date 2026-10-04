@@ -116,6 +116,12 @@ async def trace(run_id: str, refs: list[dict[str, Any]], *, plan: Optional[dict[
                                                   "(lower search rank than the papers reviewed).")
             elif pub.get("section") in LISTED:
                 t["stage"] = "listed"
+            elif (pub.get("lineage") or {}).get("edition_id") and not (pub.get("lineage") or {}).get("lead"):
+                # A co-publication or summary of a guideline edition is listed under its lead record.
+                lead = next((x for x in pubs if (x.get("lineage") or {}).get("edition_id")
+                             == pub["lineage"]["edition_id"] and (x.get("lineage") or {}).get("lead")), None)
+                t.update(stage="listed", section=(lead or {}).get("section"), position=(lead or {}).get("position"),
+                         detail="Listed under its edition's lead record (same work, another journal).")
             else:
                 t.update(lost_at="admission", detail=f"Judged {adm.get('state')}: {adm.get('reason') or ''}".strip())
             out.append(t)

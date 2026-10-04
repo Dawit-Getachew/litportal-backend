@@ -171,6 +171,18 @@ DIMENSION_GUIDE = {
         "intervention": "the prognostic factor or prediction model ('na' for overall prognosis)",
         "comparison": "the reference level of the factor ('na' when none)",
         "outcome": "the future outcome over the time horizon",
+        "extra": "When no factor is named (overall prognosis), 'na' means there is no index factor — it does NOT "
+                 "make a treatment study off-topic: the treatment received is context (setting). A cohort, registry "
+                 "or single trial arm reporting outcomes over time (survival, disease-specific death, metastasis, "
+                 "recurrence) in the asked population or stage is 'direct'; a wider population in which the asked "
+                 "group is the majority (e.g. 'locally advanced' including the asked stage) is 'broad_answering'; "
+                 "prognostic factors or models within the group, a pathological-stage cohort for a clinical-stage "
+                 "question, or a mix where the asked group is a minority is 'supportive'; a comparison of treatments "
+                 "that reports only relative effects (hazard or odds ratios, efficacy) without outcomes over time in "
+                 "the group is 'indirect'; another disease state "
+                 "(e.g. metastatic disease) is 'excluded' as wrong_population; a paper with no outcomes over time "
+                 "(toxicity, quality of life or dose planning only) is 'excluded'. If the abstract does not give the "
+                 "population or stage mix, use 'uncertain', not 'excluded'.",
     },
     "qualitative": {
         "intervention": "the phenomenon of interest", "comparison": "'na'",
@@ -330,7 +342,7 @@ def signals(pub: dict[str, Any], plan: dict[str, Any], *, primary_trials: set[st
 
 _FAMILY_WEIGHT = {"main": 10, "narrow": 7, "broad": 5, "recent": 6, "original_wording": 5, "guidelines": 8,
                   "condition_guidelines": 7, "systematic_reviews": 8, "cochrane": 6, "reviews": 3,
-                  "alternative": 7, "update": 7}
+                  "alternative": 7, "update": 7, "long_term": 7, "landmark": 8}
 AGGREGATED_FAMILIES = frozenset({"guidelines", "condition_guidelines", "systematic_reviews", "cochrane", "reviews"})
 
 
@@ -348,6 +360,24 @@ def priority(pub: dict[str, Any]) -> float:
     or source-count bonus): for each search family that found it, the family's
     weight scaled by the record's rank in that family (rank 1 → full, 21 → half)."""
     return sum(_FAMILY_WEIGHT.get(f, 2) / (1.0 + (r - 1) / 20.0) for f, r in _family_ranks(pub).items())
+
+
+# Searches that AND every "must appear" concept (PubMed checked the record against all of them,
+# MeSH explosion included); the relaxed alternative and the free-wording search do not.
+_ALL_CONCEPT_FAMILIES = frozenset({"main", "narrow", "broad", "guidelines", "systematic_reviews", "reviews",
+                                   "cochrane", "recent", "update", "long_term", "landmark"})
+_DESIGN_TYPES = frozenset({
+    "randomized controlled trial", "controlled clinical trial", "clinical trial", "clinical trial, phase ii",
+    "clinical trial, phase iii", "clinical trial, phase iv", "pragmatic clinical trial", "equivalence trial",
+    "multicenter study", "observational study", "meta-analysis", "systematic review", "practice guideline",
+    "guideline",
+})
+
+
+def design_lane(pub: dict[str, Any]) -> bool:
+    """A trial, systematic review or guideline that every approved concept matched."""
+    types = {t.lower() for t in (pub.get("article") or {}).get("publication_types_json") or []}
+    return bool(types & _DESIGN_TYPES) and bool(set(_family_ranks(pub)) & _ALL_CONCEPT_FAMILIES)
 
 
 def aggregated_priority(pub: dict[str, Any]) -> float:
@@ -507,9 +537,17 @@ def validate_items(data: Any, ids: list[str], *, comparator_stated: bool = True,
     return out
 
 
+# A second look at an excluded paper (asked for by the clinician) leans towards keeping it:
+# missing a relevant paper costs more than listing one more.
+SECOND_LOOK = ("This paper was excluded earlier and the clinician asked for a second look. Re-read it against the "
+               "question; exclude it only if it clearly does not study the asked condition, population or "
+               "treatment/test/exposure, or is not a study. If it plausibly informs the answer, keep it "
+               "(supportive or uncertain at least) and say why.")
+
+
 async def judge_batch(gateway: ModelGateway, ctx: dict[str, Any], batch: list[tuple[str, dict, dict]],
-                      ) -> tuple[dict[str, dict[str, Any]], ModelCallResult]:
-    user = _question_block(ctx) + "\n\nCandidates:\n\n" + "\n\n".join(
+                      note: Optional[str] = None) -> tuple[dict[str, dict[str, Any]], ModelCallResult]:
+    user = _question_block(ctx) + ("\n\n" + note if note else "") + "\n\nCandidates:\n\n" + "\n\n".join(
         _candidate_block(cid, pub, sig) for cid, pub, sig in batch)
     res = await gateway.complete_json(SYSTEM_PROMPT, user, max_tokens=settings.ADMISSION_MAX_TOKENS,
                                       timeout_s=settings.ADMISSION_TIMEOUT_S)
@@ -619,8 +657,9 @@ def assign_sections(pubs: list[dict[str, Any]], *, newest_first: bool = False) -
             specific = 0 if (p.get("admission") or {}).get("signals", {}).get("names_intervention") else 1
             return (0, _CURRENCY_ORDER.get(lin.get("currency"), 1), specific, -(lin.get("edition_year") or year), state)
         if role in ("systematic_review", "meta_analysis"):
-            # Newest cumulative evidence first (no age window for reviews).
-            return (1, state, -year)
+            # Newest cumulative evidence first (no age window for reviews): a newer review that
+            # answers more broadly usually contains the older direct ones' trials and more.
+            return (1, -year, state)
         if newest_first:
             return (2 + _TYPE_ORDER.get(role, 3), state, -year, -priority(p))
         return (2 + _TYPE_ORDER.get(role, 3), state, -priority(p), -year)
@@ -686,6 +725,11 @@ async def admit(pubs: list[dict[str, Any]], cqm: Any, plan: dict[str, Any], *,
     aggregated = sorted((p for p in to_judge if p["id"] not in judged_ids and aggregated_priority(p) > 0),
                         key=aggregated_priority, reverse=True)
     judged_ids |= {p["id"] for p in aggregated[: settings.ADMISSION_AGGREGATED_EXTRA]}
+    designs = [p for p in to_judge if p["id"] not in judged_ids and design_lane(p)]
+    judged_ids |= {p["id"] for p in designs[: settings.ADMISSION_DESIGN_EXTRA]}
+    landmarks = sorted((p for p in to_judge if p["id"] not in judged_ids and "landmark" in _family_ranks(p)),
+                       key=lambda p: _family_ranks(p)["landmark"])
+    judged_ids |= {p["id"] for p in landmarks[: settings.ADMISSION_LANDMARK_EXTRA]}
     to_judge = [p for p in to_judge if p["id"] in judged_ids]
     batches: list[list[tuple[str, dict, dict]]] = []
     current: list[tuple[str, dict, dict]] = []

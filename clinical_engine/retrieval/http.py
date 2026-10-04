@@ -24,6 +24,7 @@ _INTERVALS = {
     "europepmc": 0.1,
     "unpaywall": 0.1,
     "pmc_cloud": 0.05,
+    "icite": 0.1,
 }
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
 

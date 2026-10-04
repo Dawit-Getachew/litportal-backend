@@ -24,9 +24,11 @@ class SearchPage:
 
 
 async def search_page(client: httpx.AsyncClient, query: str, *, cursor: str = "*",
-                      page_size: int = PAGE_SIZE) -> SearchPage:
+                      page_size: int = PAGE_SIZE, sort: str | None = None) -> SearchPage:
     params = {"query": query, "format": "json", "resultType": "core",
               "pageSize": str(page_size), "cursorMark": cursor}
+    if sort:
+        params["sort"] = sort  # e.g. "CITED desc": most-cited first
     resp = await request(client, "GET", SEARCH, host="europepmc", params=params)
     try:
         body = resp.json()

@@ -79,8 +79,8 @@ class EngineSettings:
     # of time or fails is reported as a partial search, never as "no results".
     RETRIEVAL_HTTP_TIMEOUT_S: float = _float("CLINICAL_ENGINE_RETRIEVAL_HTTP_TIMEOUT_S", 20.0)
     RETRIEVAL_SOURCE_SECONDS: float = _float("CLINICAL_ENGINE_RETRIEVAL_SOURCE_SECONDS", 75.0)
-    RETRIEVAL_MAX_RECORDS_PUBMED: int = _int("CLINICAL_ENGINE_RETRIEVAL_MAX_RECORDS_PUBMED", 700)
-    RETRIEVAL_MAX_RECORDS_EUROPEPMC: int = _int("CLINICAL_ENGINE_RETRIEVAL_MAX_RECORDS_EUROPEPMC", 400)
+    RETRIEVAL_MAX_RECORDS_PUBMED: int = _int("CLINICAL_ENGINE_RETRIEVAL_MAX_RECORDS_PUBMED", 900)
+    RETRIEVAL_MAX_RECORDS_EUROPEPMC: int = _int("CLINICAL_ENGINE_RETRIEVAL_MAX_RECORDS_EUROPEPMC", 600)
     RETRIEVAL_CONCURRENCY_PER_SOURCE: int = _int("CLINICAL_ENGINE_RETRIEVAL_CONCURRENCY_PER_SOURCE", 3)
     # The bounded alternative search runs only when the main search matches fewer
     # records than this in total (PubMed + Europe PMC hit counts).
@@ -91,6 +91,11 @@ class EngineSettings:
     ADMISSION_MODEL: str = os.environ.get("CLINICAL_ENGINE_ADMISSION_MODEL", "")
     ADMISSION_MAX_JUDGED: int = _int("CLINICAL_ENGINE_ADMISSION_MAX_JUDGED", 100)
     ADMISSION_AGGREGATED_EXTRA: int = _int("CLINICAL_ENGINE_ADMISSION_AGGREGATED_EXTRA", 40)
+    # Trials, systematic reviews and guidelines that every approved concept matched are always
+    # reviewed, whatever their search rank (a landmark trial must not stay unread).
+    ADMISSION_DESIGN_EXTRA: int = _int("CLINICAL_ENGINE_ADMISSION_DESIGN_EXTRA", 40)
+    # The most-cited papers of the main search are always reviewed too (landmark safety net).
+    ADMISSION_LANDMARK_EXTRA: int = _int("CLINICAL_ENGINE_ADMISSION_LANDMARK_EXTRA", 40)
     ADMISSION_BATCH_SIZE: int = _int("CLINICAL_ENGINE_ADMISSION_BATCH_SIZE", 10)
     ADMISSION_CONCURRENCY: int = _int("CLINICAL_ENGINE_ADMISSION_CONCURRENCY", 4)
     ADMISSION_MAX_TOKENS: int = _int("CLINICAL_ENGINE_ADMISSION_MAX_TOKENS", 3000)

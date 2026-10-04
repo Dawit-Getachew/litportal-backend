@@ -107,6 +107,8 @@ MAX_RECORDS = {
     ("reviews", "pubmed"): 30, ("reviews", "europepmc"): 20,
     ("cochrane", "pubmed"): 20,
     ("recent", "pubmed"): 100, ("recent", "europepmc"): 60,
+    ("long_term", "pubmed"): 100, ("long_term", "europepmc"): 60,
+    ("landmark", "pubmed"): 100, ("landmark", "europepmc"): 100,
     ("alternative", "pubmed"): 100, ("alternative", "europepmc"): 60,
     ("update", "pubmed"): 60, ("update", "europepmc"): 40,
 }
@@ -122,6 +124,8 @@ FAMILY_LABELS = {
     "reviews": "Reviews",
     "cochrane": "Cochrane reviews",
     "recent": "Last 5 years",
+    "long_term": "Long-term outcomes (prognosis)",
+    "landmark": "Most-cited papers",
     "alternative": "Wider alternative (only if the main search finds almost nothing)",
     "update": "Newer than the latest guideline or review",
 }
@@ -271,6 +275,18 @@ def _relaxation(plan: dict[str, Any]) -> Optional[tuple[dict[str, Any], str, lis
     return None
 
 
+# Overall prognosis: the Clinical Queries prognosis filters were tuned to inception cohorts and miss
+# long-term trial reports and cohorts that never say "prognosis" (Wilczynski & Haynes 2004; Boulos
+# 2021); a lane for survival / long-term follow-up wording finds them (PROGRESS; Iorio 2015: trial
+# arms are valid overall-prognosis evidence).
+_PROGNOSIS_TYPES = frozenset({"prognosis", "prognostic_factor"})
+_LONG_TERM_WORDS = ("long-term", "long term", "10-year", "15-year", "20-year", "10-yr", "15-yr", "final results",
+                    "final report", "final analysis", "median follow-up", "survival")
+_LONG_TERM_PUBMED = ("(" + " OR ".join(f'"{w}"[tiab]' for w in _LONG_TERM_WORDS)
+                     + ' OR "survival analysis"[MeSH Terms] OR mortality[Subheading])')
+_LONG_TERM_EPMC = "(" + " OR ".join(f'TITLE_ABS:"{w}"' for w in _LONG_TERM_WORDS) + ")"
+
+
 def build(plan: dict[str, Any], question: str, *, sources: tuple[str, ...] = ("pubmed", "europepmc")) -> dict[str, Any]:
     """The full portfolio for an approved plan: specs + what was skipped and why."""
     qtype = plan.get("question_type") or "other"
@@ -282,13 +298,14 @@ def build(plan: dict[str, Any], question: str, *, sources: tuple[str, ...] = ("p
     specs: list[QuerySpec] = []
     skipped: list[dict[str, str]] = []
 
-    def add(lane: str, family: str, source: str, query: str, purpose: str, *, condition: Optional[str] = None) -> None:
+    def add(lane: str, family: str, source: str, query: str, purpose: str, *, condition: Optional[str] = None,
+            sort: Optional[str] = None) -> None:
         if not query:
             return
         specs.append(QuerySpec(
             id=f"{lane}:{family}:{source}", lane=lane, family=family, source=source,
             query=query[: ecp.MAX_QUERY_LEN], purpose=purpose,
-            max_records=MAX_RECORDS.get((family, source), 50), condition=condition,
+            max_records=MAX_RECORDS.get((family, source), 50), condition=condition, sort=sort,
         ))
 
     for source in sources:
@@ -297,6 +314,12 @@ def build(plan: dict[str, Any], question: str, *, sources: tuple[str, ...] = ("p
             continue
         add("foundational_primary", "main", source, _with_filters(core, plan, source),
             "Every 'must appear' concept, AND-ed; each concept = its MeSH heading OR its words in the title/abstract.")
+        # Relevance ranking favours recent, popular records and buries landmark papers in large
+        # result sets; the same search read most-cited first finds them.
+        add("foundational_primary", "landmark", source, _with_filters(core, plan, source),
+            "The main search read most-cited first ("
+            + ("NIH iCite citation counts" if source == "pubmed" else "Europe PMC's citation sort")
+            + ") — landmark papers that relevance ranking buries.", sort="cited")
         if words:
             plain = " ".join(words) if source == "pubmed" else " AND ".join(words)
             add("foundational_primary", "original_wording", source, _with_filters(plain, plan, source),
@@ -313,6 +336,11 @@ def build(plan: dict[str, Any], question: str, *, sources: tuple[str, ...] = ("p
                 add("foundational_primary", "narrow", source,
                     _with_filters(f"({core}) AND ({' OR '.join(designs)})", plan, source),
                     "The main search narrowed to the study designs that answer this kind of question.")
+        if qtype in _PROGNOSIS_TYPES:
+            lt = _LONG_TERM_PUBMED if source == "pubmed" else _LONG_TERM_EPMC
+            add("foundational_primary", "long_term", source, _with_filters(f"({core}) AND {lt}", plan, source),
+                "The main search narrowed to survival and long-term follow-up reports — cohorts and trial arms "
+                "that report outcomes over time (prognosis filters miss many of them).")
         guide = _GUIDELINES_PUBMED if source == "pubmed" else _GUIDELINES_EPMC
         add("aggregated", "guidelines", source, _with_filters(f"({core}) AND {guide}", plan, source),
             "Guidelines and consensus statements on the approved concepts (indexed in "

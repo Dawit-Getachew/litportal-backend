@@ -24,7 +24,7 @@ import httpx
 
 from clinical_engine import store
 from clinical_engine.config import settings
-from clinical_engine.retrieval import europepmc, http, pubmed
+from clinical_engine.retrieval import citations, europepmc, http, pubmed
 from clinical_engine.retrieval.http import SourceError
 from models.common import new_id
 
@@ -43,6 +43,7 @@ class QuerySpec:
     max_records: int
     condition: Optional[str] = None  # None (always) | "if_sparse"
     notes: list[str] = field(default_factory=list)
+    sort: Optional[str] = None       # None (relevance) | "cited" (most-cited first: the landmark lane)
 
     def public(self) -> dict[str, Any]:
         return asdict(self)
@@ -79,7 +80,42 @@ async def _store_records(run_id: str, spec: QuerySpec, records: list[tuple[str, 
     return len(items)
 
 
+# The most-cited lane ranks this many of the query's best matches by citations (E-utilities' limit).
+CITED_POOL = 10_000
+
+
+async def _run_pubmed_cited(client: httpx.AsyncClient, run_id: str, spec: QuerySpec, ledger: dict[str, Any]) -> None:
+    page = await pubmed.esearch(client, spec.query, retmax=CITED_POOL)
+    ledger.update({"count": page.count, "translation": page.translation,
+                   "warnings": page.warnings[:10], "errors": page.errors[:10], "pool": len(page.ids)})
+    if not page.ids:
+        return
+    try:
+        counts = await citations.citation_counts(client, page.ids)
+    except SourceError as exc:  # the citation service, not PubMed, failed
+        raise SourceError("citation_unavailable", exc.code) from exc
+    top = sorted(page.ids, key=lambda p: -counts.get(p, 0))[: spec.max_records]
+    recs = {r["pmid"]: r for r in await pubmed.efetch(client, top)}
+    docs = []
+    for pmid in top:
+        rec = recs.get(pmid)
+        if rec is None:
+            continue
+        try:
+            article = pubmed.to_article(rec)
+        except SourceError:
+            continue
+        docs.append((record_key_pubmed(rec), {"record_id": new_id(), "article": article, "citation_count": counts.get(pmid),
+                                              "pubmed": {k: rec.get(k) for k in (
+                                                  "mesh", "nct", "entrez_date", "pub_date", "article_date", "links",
+                                                  "keywords", "language", "publication_types")}}))
+    await _store_records(run_id, spec, docs, start_rank=1)
+    ledger.update({"records_read": len(docs), "pages": 1, "truncated": page.count > len(docs)})
+
+
 async def _run_pubmed(client: httpx.AsyncClient, run_id: str, spec: QuerySpec, ledger: dict[str, Any]) -> None:
+    if spec.sort == "cited":
+        return await _run_pubmed_cited(client, run_id, spec, ledger)
     read = 0
     page_no = 0
     count: Optional[int] = None
@@ -119,7 +155,8 @@ async def _run_europepmc(client: httpx.AsyncClient, run_id: str, spec: QuerySpec
     count: Optional[int] = None
     while cursor and read < spec.max_records:
         page = await europepmc.search_page(client, spec.query, cursor=cursor,
-                                           page_size=min(europepmc.PAGE_SIZE, spec.max_records - read))
+                                           page_size=min(europepmc.PAGE_SIZE, spec.max_records - read),
+                                           sort="CITED desc" if spec.sort == "cited" else None)
         page_no += 1
         if count is None:
             count = page.count
@@ -157,6 +194,10 @@ async def run_one(client: httpx.AsyncClient, run_id: str, spec: QuerySpec) -> Qu
     except SourceError as exc:
         error = exc.code
         status = "partial" if ledger["records_read"] else "failed"
+        if exc.code == "citation_unavailable":
+            # The most-cited lane is an extra; when its citation service is down the
+            # source still answered every relevance search — not an outage.
+            status, error = "skipped", "optional_unavailable:citations"
     except asyncio.CancelledError:
         await store.update_query(qid, {**ledger, "status": "skipped", "error": "source_time_budget",
                                        "duration_ms": int((time.perf_counter() - started) * 1000),
@@ -184,7 +225,8 @@ def _source_status(outcomes: list[QueryOutcome], total: int, timed_out: bool) ->
     bad = [o for o in done if o.status in ("failed", "partial")]
     if done and len(bad) == len(done) and not any(o.records_read for o in done):
         return "failed"
-    at_limit = sum(1 for o in outcomes if o.status == "skipped" and o.error == "source_record_budget")
+    at_limit = sum(1 for o in outcomes if o.status == "skipped"
+                   and (o.error == "source_record_budget" or (o.error or "").startswith("optional_unavailable")))
     if timed_out or bad or len(done) + at_limit < total:
         return "partial"
     return "complete"
