@@ -121,6 +121,18 @@ def test_press_syntax_problems():
     assert press.syntax_problems('BOGUS:"x"', "europepmc") == ["unknown Europe PMC field BOGUS:"]
 
 
+def test_queries_are_shown_in_planned_order_not_finish_order():
+    planned = [s.public() for s in portfolio.build(PLAN, "corticosteroids in septic shock")["specs"]]
+    finished = [{"spec_id": s["id"], "source": s["source"]} for s in reversed(planned)]
+    finished.insert(1, {"spec_id": "update:update:europepmc", "source": "europepmc"})  # added during the run
+    finished.append({"spec_id": "update:update:pubmed", "source": "pubmed"})
+    shown = [q["spec_id"] for q in portfolio.in_planned_order(finished, planned)]
+    assert shown == [s["id"] for s in planned] + ["update:update:pubmed", "update:update:europepmc"]
+    assert shown[0] == "foundational_primary:main:pubmed"
+    # No plan yet (search still running): PubMed first, otherwise as they finished.
+    assert [q["source"] for q in portfolio.in_planned_order(finished, None)][:2] == ["pubmed", "pubmed"]
+
+
 def test_update_specs_anchor_on_cutoff_not_publication_date():
     specs = portfolio.update_specs(PLAN, "2024-11-30")
     pm = next(s for s in specs if s.source == "pubmed")
@@ -364,18 +376,24 @@ async def test_admission_fixtures_and_sections(client):
 async def test_design_lane_reviews_trials_beyond_the_rank_budget(client, monkeypatch):
     monkeypatch.setattr(settings, "ADMISSION_AGGREGATED_EXTRA", 0)
 
-    def pub(pid, title, rank, types):
-        return {"id": pid, "identity_status": "verified", "hits": [{"family": "main", "rank": rank}],
+    def pub(pid, title, rank, types, family="main"):
+        return {"id": pid, "identity_status": "verified", "hits": [{"family": family, "rank": rank}],
                 "article": {"pmid": pid, "title": title, "abstract": "Septic shock; hydrocortisone; mortality.",
                             "publication_types_json": types}}
 
     pubs = [pub("a", "Hydrocortisone in septic shock: cohort", 1, ["Journal Article"]),
             pub("b", "Reversal of late septic shock with hydrocortisone", 60, ["Randomized Controlled Trial"]),
-            pub("c", "Hydrocortisone in septic shock: practice survey", 70, ["Journal Article"])]
+            pub("c", "Hydrocortisone in septic shock: practice survey", 70, ["Journal Article"]),
+            # Not yet indexed (no design type): the title says it is a systematic review; found by the
+            # clinician's own wording only.
+            pub("d", "Hydrocortisone in septic shock: a systematic review", 2, ["Journal Article"], "original_wording"),
+            # The relaxed alternative does not match every concept: no design slot.
+            pub("e", "Hydrocortisone in shock: a randomized trial", 1, ["Journal Article"], "alternative")]
     await admission.admit(pubs, _cqm(), PLAN, gateway=FakeModel(lambda t: dims()), max_judged=1)
     states = {p["id"]: p["admission"]["state"] for p in pubs}
     assert states["a"] != "not_assessed" and states["b"] != "not_assessed"  # the RCT is reviewed anyway
-    assert states["c"] == "not_assessed"
+    assert states["d"] != "not_assessed"  # the unindexed systematic review too
+    assert states["c"] == "not_assessed" and states["e"] == "not_assessed"
 
 
 async def test_admission_without_a_model_never_admits(client):
@@ -400,6 +418,13 @@ def test_policy_state_rules():
     assert ps(dims(population="narrower"), "direct", None) == ("supportive", None)          # subgroup
     assert ps(dims(comparison="narrower"), "direct", None, comparator_stated=False) == ("supportive", None)
     assert ps(dims(comparison="narrower"), "direct", None, comparator_stated=True) == ("direct", None)
+    # A guideline spans regimens and comparators: with no comparator asked, that is not a head-to-head study.
+    guideline_labels = dims(population="broader", condition="broader", intervention="broader", comparison="broader")
+    assert ps(guideline_labels, "broad_answering", None, comparator_stated=False) == ("supportive", None)
+    assert ps(guideline_labels, "broad_answering", None, comparator_stated=False,
+              guideline=True) == ("broad_answering", None)
+    assert ps(dims(comparison="different"), "direct", None, comparator_stated=False,
+              guideline=True) == ("supportive", None)
     assert ps(dims(condition="broader"), "direct", None) == ("broad_answering", None)
     assert ps(dims(intervention="na"), "direct", None) == ("indirect", None)
     assert ps(dims(intervention="na"), "direct", None, na_intervention_ok=True) == ("direct", None)
@@ -458,6 +483,68 @@ def test_record_design_types_make_a_primary_study():
     assert role(["Comparative Study", "Journal Article"], "other") == "other"  # models and lab work carry it too
     assert role(["Observational Study"], "secondary_analysis") == "secondary_analysis"  # the model read the abstract
     assert role(["Historical Article", "Journal Article"], "other") == "narrative_review"
+
+
+def test_animal_or_lab_studies_never_listed_for_a_patient_question():
+    # A record not yet MeSH-indexed passes the search's animal filter; the model names the subjects.
+    items = {"items": [{"id": "dog", "state": "indirect", "population": "different", "condition": "match",
+                        "intervention": "match", "comparison": "na", "outcome": "unclear", "setting": "related",
+                        "subjects": "animals", "role": "other", "reason": "Canine trauma, not human patients."},
+                       {"id": "cells", "state": "supportive", "subjects": "laboratory", "role": "other", "reason": "x"},
+                       {"id": "both", "state": "direct", "population": "match", "condition": "match",
+                        "intervention": "match", "comparison": "match", "outcome": "match", "setting": "match",
+                        "subjects": "humans", "role": "other", "reason": "x"},
+                       {"id": "odd", "state": "direct", "subjects": "plants", "role": "other", "reason": "x"}]}
+    got = admission.validate_items(items, ["dog", "cells", "both", "odd"])
+    assert got["odd"]["subjects"] == "unclear" and got["both"]["subjects"] == "humans"
+    sig = {"role": "other", "role_source": "report"}
+    dog = admission.finalize(sig, got["dog"], method="model")
+    assert (dog["state"], dog["exclusion"]) == ("excluded", "animal_or_lab") and dog["reason"].startswith("Animal study")
+    assert admission.finalize(sig, got["cells"], method="model")["exclusion"] == "animal_or_lab"
+    assert admission.finalize(sig, got["both"], method="model")["state"] == "direct"  # humans: unchanged
+    assert admission.finalize(sig, {"state": "direct", "role": "other", "reason": "x"}, method="model")["state"] == "direct"
+    # A background or mechanism question may use lab work — as support, never as the answer.
+    lab_direct = {**got["cells"], "state": "direct"}
+    assert admission.finalize(sig, lab_direct, method="model", narrative_ok=True)["state"] == "supportive"
+    assert admission.finalize(sig, got["dog"], method="model", narrative_ok=True)["state"] == "indirect"
+
+
+def test_a_guideline_naming_the_treatment_with_an_offered_wording_counts_as_specific():
+    steroids = {"id": "c2", "role": "intervention", "term": "steroid administration", "required": True,
+                "mesh": "Steroids", "synonyms": [], "off_equivalents": [{"id": "o1", "text": "corticosteroids"}]}
+    plan = ecp.validate_plan({**PLAN, "concepts": [PLAN["concepts"][0], steroids]})
+    bare = ecp.validate_plan({**PLAN, "concepts": [PLAN["concepts"][0], {**steroids, "off_equivalents": []}]})
+
+    def guideline(title, year):
+        return {"id": title, "article": {"title": title, "publication_year": year,
+                                         "publication_types_json": ["Practice Guideline"]}}
+
+    focused = guideline("2024 Focused Update: Guidelines on Use of Corticosteroids in Sepsis", 2024)
+    general = guideline("International Guidelines for Management of Sepsis and Septic Shock 2026", 2026)
+    # The search never used "corticosteroids" (left off in step 2), but the title names the asked treatment.
+    assert admission.signals(focused, plan, primary_trials=set())["names_intervention"]
+    assert not admission.signals(focused, bare, primary_trials=set())["names_intervention"]
+    assert not admission.signals(general, plan, primary_trials=set())["names_intervention"]
+    # Offered only with the act of giving ("corticosteroid administration"): the drug word still counts.
+    acted = ecp.validate_plan({**PLAN, "concepts": [PLAN["concepts"][0], {
+        **steroids, "off_equivalents": [{"id": "o2", "text": "corticosteroid administration"}]}]})
+    assert admission.signals(focused, acted, primary_trials=set())["names_intervention"]
+
+
+def test_a_direct_review_leads_a_broader_one_up_to_two_years_newer():
+    def review(pid, year, state, rank):
+        return {"id": pid, "article": {"publication_year": year}, "hits": [{"family": "main", "rank": rank}],
+                "admission": {"state": state, "role": "meta_analysis"}}
+
+    pubs = [review("broad-2026", 2026, "broad_answering", 9), review("broad-2025", 2025, "broad_answering", 9),
+            review("direct-2024", 2024, "direct", 9), review("broad-2024-strong", 2024, "broad_answering", 1),
+            review("broad-2024-weak", 2024, "broad_answering", 40), review("direct-2023", 2023, "direct", 9),
+            review("direct-2022-weak", 2022, "direct", 60)]
+    sections = admission.assign_sections(pubs)
+    # Five review places; at equal standing (2022 direct = 2024 broader) the stronger search match leads.
+    assert [p["id"] for p in sections["main"]] == ["direct-2024", "broad-2026", "direct-2023", "broad-2025",
+                                                    "broad-2024-strong"]
+    assert [p["id"] for p in sections["more"]] == ["broad-2024-weak", "direct-2022-weak"]
 
 
 # ── W2.3 lineage ────────────────────────────────────────────────────────────
@@ -562,6 +649,38 @@ async def test_access_routes_identity_permission_and_blocking(client):
         res = await access.resolve(blocked, c)
     assert all("10.1155/2014/698265" not in link["url"] for link in res["readable"]["links"])
     assert res["readable"]["blocked_links"]
+
+
+async def test_default_and_alternate_routes_on_the_same_papers(client):
+    """W2.5: the same papers through the default route (Europe PMC) and, with it
+    unavailable, the alternate route (PMC Cloud) give the same identity, completeness,
+    version and permission; a text that belongs to another paper is rejected on both."""
+    def pub(fake, pmid):
+        r = fake.by_pmid(pmid)
+        return {"identity_status": "verified", "sources": ["pubmed"], "id": pmid,
+                "article": {"pmid": r.pmid, "doi": r.doi, "pmcid": r.pmcid, "title": r.title,
+                            "abstract": r.abstract, "journal": r.journal},
+                "epmc": {"in_epmc": True, "is_open_access": True}}
+
+    results = {}
+    for route, fail in (("default", set()), ("alternate", {"fulltext"})):
+        fake = FakeSources(RECORDS, fail=fail)
+        async with httpx.AsyncClient(transport=fake.transport) as c:
+            results[route] = {pmid: await access.resolve(pub(fake, pmid), c) for pmid in ("111", "112")}
+    d, a = results["default"]["111"], results["alternate"]["111"]
+    assert d["acquired"]["route"] == "europepmc" and a["acquired"]["route"] == "pmc_cloud"
+    for key in ("status", "version", "completeness", "identity"):
+        assert d["acquired"][key] == a["acquired"][key], key
+    assert d["permitted"] == a["permitted"] and d["permitted"]["text_scope"] == "full_text"
+    assert d["readable"]["status"] == a["readable"]["status"] == "free_full_text"
+    # The alternate text is fetched only when the default route has none.
+    assert [x["route"] for x in d["attempts"]] == ["europepmc", "pmc_cloud_metadata"]
+    assert [(x["route"], x["status"]) for x in a["attempts"]] == [
+        ("europepmc", "not_available"), ("pmc_cloud_metadata", "ok"), ("pmc_cloud", "ok")]
+    for route in ("default", "alternate"):
+        wrong = results[route]["112"]
+        assert wrong["acquired"]["status"] != "full_text"
+        assert any(x["status"] == "identity_mismatch" for x in wrong["attempts"]), route
 
 
 async def test_access_stage_never_stalls(client, monkeypatch):
