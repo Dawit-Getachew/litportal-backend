@@ -279,6 +279,29 @@ async def test_stage_trace_names_where_each_reference_was_lost(client):
     assert by["424242"]["lost_at"] == "not_in_pubmed"
 
 
+async def test_most_cited_lane_reads_landmarks_beyond_relevance_rank(client, monkeypatch):
+    from clinical_engine.retrieval.run import QuerySpec
+
+    # Record 112 is last in relevance order but the most cited; read only 2 by relevance.
+    recs = [Rec(r.pmid, r.title, r.abstract, cites=(900 if r.pmid == "112" else 5)) for r in RECORDS]
+    fake = FakeSources(recs)
+    specs = [_spec("main", BOTH, 2),
+             QuerySpec(id="t:cited", lane="foundational_primary", family="landmark", source="pubmed", query=BOTH,
+                       purpose="t", max_records=2, sort="cited")]
+    run_id = "t-" + uuid.uuid4().hex[:8]
+    states = await run_portfolio(run_id, specs, transport=fake.transport)
+    ledger = {q["spec_id"]: q for q in await store.queries_for_run(run_id)}
+    assert ledger["t:cited"]["status"] == "ok" and ledger["t:cited"]["pool"] == 9
+    hits = {c["article"]["pmid"]: c for c in await store.candidates_for_run(run_id)}
+    assert "112" in hits and any(h["family"] == "landmark" and h["rank"] == 1 for h in hits["112"]["hits"])
+    assert states["pubmed"]["status"] == "complete"
+    # The citation service down: the lane is skipped, the search is not "partial".
+    run2 = "t-" + uuid.uuid4().hex[:8]
+    states = await run_portfolio(run2, specs, transport=FakeSources(recs, fail={"icite"}).transport)
+    led2 = {q["spec_id"]: q for q in await store.queries_for_run(run2)}
+    assert led2["t:cited"]["status"] == "skipped" and states["pubmed"]["status"] == "complete"
+
+
 async def test_rate_limit_retry_after_is_honoured(client):
     seen = {"n": 0}
 
@@ -336,6 +359,23 @@ async def test_admission_fixtures_and_sections(client):
             for p in guide_main] == [2021]
     assert sum(1 for p in sections["main"] + sections["other"] + sections["more"]
                if p["article"]["pmid"] in ("105", "106")) == 1
+
+
+async def test_design_lane_reviews_trials_beyond_the_rank_budget(client, monkeypatch):
+    monkeypatch.setattr(settings, "ADMISSION_AGGREGATED_EXTRA", 0)
+
+    def pub(pid, title, rank, types):
+        return {"id": pid, "identity_status": "verified", "hits": [{"family": "main", "rank": rank}],
+                "article": {"pmid": pid, "title": title, "abstract": "Septic shock; hydrocortisone; mortality.",
+                            "publication_types_json": types}}
+
+    pubs = [pub("a", "Hydrocortisone in septic shock: cohort", 1, ["Journal Article"]),
+            pub("b", "Reversal of late septic shock with hydrocortisone", 60, ["Randomized Controlled Trial"]),
+            pub("c", "Hydrocortisone in septic shock: practice survey", 70, ["Journal Article"])]
+    await admission.admit(pubs, _cqm(), PLAN, gateway=FakeModel(lambda t: dims()), max_judged=1)
+    states = {p["id"]: p["admission"]["state"] for p in pubs}
+    assert states["a"] != "not_assessed" and states["b"] != "not_assessed"  # the RCT is reviewed anyway
+    assert states["c"] == "not_assessed"
 
 
 async def test_admission_without_a_model_never_admits(client):
@@ -599,6 +639,9 @@ async def test_full_engine_run_through_the_api(client, engine_api, monkeypatch):
     pm_main = next(q for q in ev["portfolio"]["queries"] if q["source"] == "pubmed" and q["family"] == "main")
     assert ev["portfolio"]["press"]["summary"] and pm_main["translation"]
     assert all(c["access"]["status"] != "checking" for c in main)
+    # Papers the access stage does not cover say so once the run is done (never "checking" forever).
+    unchecked = [c for k in ("more", "excluded") for c in ev["sections"][k]]
+    assert all(c["access"]["status"] != "checking" for c in unchecked)
     # The existing session API keeps working on the projected rows.
     legacy = await client.get(f"/api/search-sessions/{sid}", headers=h)
     assert legacy.status_code == 200 and legacy.json()["status"] == "awaiting_selection"
@@ -611,6 +654,9 @@ async def test_full_engine_run_through_the_api(client, engine_api, monkeypatch):
     # Retry access for one listed paper; owner only.
     one = main[0]["id"]
     assert (await client.post(f"{BASE}/sessions/{sid}/evidence/{one}/access/retry", headers=h)).status_code == 200
+    if ev["sections"]["excluded"]:  # an excluded paper's access can be checked on request too
+        ex = ev["sections"]["excluded"][0]["id"]
+        assert (await client.post(f"{BASE}/sessions/{sid}/evidence/{ex}/access/retry", headers=h)).status_code == 200
     other = await _signup(client)
     assert (await client.get(f"{BASE}/sessions/{sid}/evidence", headers=other)).status_code == 404
     assert (await client.post(f"{BASE}/sessions/{sid}/evidence/{one}/access/retry", headers=other)).status_code == 404
@@ -643,9 +689,56 @@ async def test_failed_engine_run_closes_its_session(client, engine_api, monkeypa
         await asyncio.sleep(0.05)
     assert run["status"] == "failed" and run["error"]["task"] == "union"
     sid = run["links"]["search_session_id"]
-    # The session it opened does not stay "searching" forever.
-    legacy = await client.get(f"/api/search-sessions/{sid}", headers=h)
+    # The session it opened does not stay "searching" forever (closed just after the run is marked failed).
+    for _ in range(40):
+        legacy = await client.get(f"/api/search-sessions/{sid}", headers=h)
+        if legacy.json().get("status") != "searching":
+            break
+        await asyncio.sleep(0.05)
     assert legacy.status_code == 200 and legacy.json()["status"] == "error"
     ev = (await client.get(f"{BASE}/sessions/{sid}/evidence", headers=h)).json()
     assert ev["run"]["status"] == "failed" and not ev["listed"]
+    await runner.shutdown()
+
+
+async def test_unlisted_papers_and_review_on_request(client, engine_api, monkeypatch):  # noqa: F811
+    from clinical_engine.orchestrator import runner
+
+    http.TEST_TRANSPORT = FakeSources(RECORDS).transport
+    monkeypatch.setattr(settings, "RETRIEVAL_ADAPTER", "engine")
+    monkeypatch.setattr(admission, "admission_gateway", lambda: FakeModel(_decide))
+    for knob in ("ADMISSION_MAX_JUDGED", "ADMISSION_AGGREGATED_EXTRA", "ADMISSION_DESIGN_EXTRA",
+                 "ADMISSION_LANDMARK_EXTRA"):
+        monkeypatch.setattr(settings, knob, 2 if knob == "ADMISSION_MAX_JUDGED" else 0)
+    h = await _signup(client)
+    v = (await client.post(f"{BASE}/questions", headers=h,
+                           json={"text": "In adults with septic shock, do corticosteroids reduce mortality?"})).json()
+    qid = v["question_id"]
+    v = (await client.post(f"{BASE}/questions/{qid}/approve-interpretation", headers=h, json={"version": 1})).json()
+    r = await client.post(f"{BASE}/questions/{qid}/confirm", headers=h,
+                          json={"version": 1, "mode": "review_papers", "search_terms_version": v["search_terms"]["version"]})
+    run_id = r.json()["run"]["id"]
+    for _ in range(400):
+        run = await store.get_run(run_id)
+        if run["status"] in ("completed", "failed"):
+            break
+        await asyncio.sleep(0.05)
+    assert run["status"] == "completed", run.get("error")
+    sid = run["links"]["search_session_id"]
+    un = (await client.get(f"{BASE}/sessions/{sid}/evidence/unlisted", headers=h)).json()
+    assert un["counts"]["not_reviewed"] == len(un["not_reviewed"]) > 0
+    first = un["not_reviewed"][0]
+    assert first["title"] and "search_strength" in first
+    card = (await client.post(f"{BASE}/sessions/{sid}/evidence/{first['id']}/review", headers=h)).json()
+    assert card["reviewed_on_request"] and card["section"] in ("more", "excluded") and card["row_id"]
+    un2 = (await client.get(f"{BASE}/sessions/{sid}/evidence/unlisted", headers=h)).json()
+    assert un2["counts"]["not_reviewed"] == un["counts"]["not_reviewed"] - 1
+    assert un2["counts"]["reviewed_on_request"] == 1
+    # A listed paper cannot be "reviewed again"; another user cannot see or review this search.
+    listed = (await client.get(f"{BASE}/sessions/{sid}/evidence", headers=h)).json()["sections"]["main"]
+    if listed:
+        assert (await client.post(f"{BASE}/sessions/{sid}/evidence/{listed[0]['id']}/review", headers=h)).status_code == 409
+    other = await _signup(client)
+    assert (await client.get(f"{BASE}/sessions/{sid}/evidence/unlisted", headers=other)).status_code == 404
+    assert (await client.post(f"{BASE}/sessions/{sid}/evidence/{first['id']}/review", headers=other)).status_code == 404
     await runner.shutdown()

@@ -36,6 +36,7 @@ class Rec:
     oa_licence: Optional[str] = None    # open access in PMC with this licence
     jats_title: Optional[str] = None    # full text with a different title (wrong article)
     entrez: str = "2020/05/01"
+    cites: int = 0                      # citation count (iCite / Europe PMC)
 
 
 def _groups(query: str) -> list[list[str]]:
@@ -58,7 +59,7 @@ def _match(rec: Rec, query: str) -> bool:
 class FakeSources:
     def __init__(self, records: list[Rec], *, fail: set[str] = frozenset()) -> None:
         self.records = records
-        self.fail = set(fail)  # "pubmed" | "europepmc" | "fulltext"
+        self.fail = set(fail)  # "pubmed" | "europepmc" | "fulltext" | "icite"
         self.calls: list[str] = []
 
     def by_pmid(self, pmid: str) -> Optional[Rec]:
@@ -126,6 +127,12 @@ class FakeSources:
             start, size = int(params.get("retstart", 0)), int(params.get("retmax", 20))
             return httpx.Response(200, json={"esearchresult": {
                 "count": str(len(hits)), "idlist": hits[start:start + size], "querytranslation": f"T({term[:40]})"}})
+        if "icite.od.nih.gov/api/pubs" in url:
+            if "icite" in self.fail:
+                return httpx.Response(503, text="down")
+            pmids = (request.url.params.get("pmids") or "").split(",")
+            return httpx.Response(200, json={"data": [{"pmid": int(r.pmid), "citation_count": r.cites}
+                                                      for p in pmids if (r := self.by_pmid(p))]})
         if "efetch.fcgi" in url:
             ids = parse_qs(request.content.decode()).get("id", [""])[0].split(",")
             return httpx.Response(200, text=self.efetch_xml(ids))
@@ -134,6 +141,8 @@ class FakeSources:
                 return httpx.Response(503, text="down")
             q = request.url.params.get("query", "")
             hits = [r for r in self.records if _match(r, q.replace("TITLE_ABS:", ""))]
+            if (request.url.params.get("sort") or "").upper().startswith("CITED"):
+                hits = sorted(hits, key=lambda r: -r.cites)
             cursor = request.url.params.get("cursorMark", "*")
             start = 0 if cursor == "*" else int(cursor)
             size = int(request.url.params.get("pageSize", 25))
